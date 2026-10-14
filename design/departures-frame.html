@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Departures — style frame</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --page: #08090b;
+    --board: #0e1013;
+    --cell: #1a1d22;
+    --cell-hi: #20242a;
+    --rule: #23272e;
+    --ink: #f3efe6;
+    --dim: #8a8f99;
+    --faint: #4a4f58;
+    --amber: #ffb547;
+    --go: #7fd8a4;
+    --late: #ff6b4a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--page); overflow: hidden; }
+  body { display: grid; place-items: center; font-family: 'Barlow', system-ui, sans-serif; color: var(--ink); }
+
+  /* Designed at 1920x1080 (Echo Show 15, or a TV) and scaled to fit. */
+  #stage { position: absolute; width: 1920px; height: 1080px; left: 50%; top: 50%; transform-origin: 0 0; background: var(--board); padding: 64px 72px 56px; display: grid; grid-template-rows: auto auto 1fr auto; gap: 34px; }
+
+  /* ---------- header ---------- */
+  header { display: grid; grid-template-columns: 1fr auto; align-items: end; padding-bottom: 26px; border-bottom: 2px solid var(--rule); }
+  .eyebrow { font: 600 26px/1 'Barlow Condensed'; letter-spacing: .22em; color: var(--amber); display: flex; align-items: center; gap: 14px; }
+  .eyebrow svg { width: 34px; height: 34px; }
+  h1 { font: 700 84px/1 'Barlow Condensed'; letter-spacing: .01em; margin-top: 14px; }
+  .clockwrap { display: flex; align-items: end; gap: 48px; }
+  .gate { text-align: right; }
+  .gate .label { font: 600 22px/1 'Barlow Condensed'; letter-spacing: .2em; color: var(--dim); }
+  .gate .when { font: 600 56px/1 'Barlow Condensed'; margin-top: 10px; }
+  .gate .left { color: var(--amber); }
+  #clock { font: 600 148px/.82 'Barlow Condensed'; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+  /* ---------- board ---------- */
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { font: 600 22px/1 'Barlow Condensed'; letter-spacing: .2em; color: var(--dim); text-align: left; padding: 0 0 18px; }
+  td { height: 116px; border-top: 2px solid var(--rule); vertical-align: middle; }
+  col.c-name { width: 300px; } col.c-now { width: 600px; } col.c-then { width: auto; } col.c-status { width: 330px; } col.c-ready { width: 190px; }
+  .name { font: 700 54px/1 'Barlow Condensed'; letter-spacing: .03em; }
+  .then { font: 500 34px/1.1 'Barlow'; color: var(--dim); transition: opacity .4s; }
+  .ready { font: 600 54px/1 'Barlow Condensed'; font-variant-numeric: tabular-nums; text-align: right; }
+  th.r { text-align: right; }
+
+  /* split-flap cells */
+  .flap { display: inline-flex; gap: 4px; font: 600 42px/1 'Barlow Condensed'; }
+  .cell { position: relative; width: 31px; height: 54px; background: var(--cell); border-radius: 5px; display: grid; place-items: center; overflow: hidden; perspective: 260px; }
+  .cell.blank { background: #14171b; }
+  .cell::after { content: ''; position: absolute; inset: 50% 0 auto; height: 2px; background: #07080a; }
+  .ch { grid-area: 1 / 1; backface-visibility: hidden; }
+  .ch.in { animation: flapIn .32s cubic-bezier(.25,.7,.3,1) both; transform-origin: 50% 0; }
+  .ch.out { animation: flapOut .2s ease-in both; transform-origin: 50% 100%; }
+  @keyframes flapIn { from { transform: rotateX(80deg); opacity: .2; } }
+  @keyframes flapOut { to { transform: rotateX(-80deg); opacity: 0; } }
+  .status-ok .ch { color: var(--go); }
+  .status-board .ch { color: var(--amber); }
+  .status-late .ch { color: var(--late); }
+  .status-done .ch { color: var(--dim); }
+  .status-late .cell { background: #2a1a17; }
+
+  /* ---------- runway ---------- */
+  .runway { position: relative; align-self: end; }
+  .rw-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 18px; }
+  .rw-head .label { font: 600 22px/1 'Barlow Condensed'; letter-spacing: .2em; color: var(--dim); }
+  .rw-head .learned { font: 500 24px/1 'Barlow'; color: var(--dim); }
+  .rw-head .learned b { color: var(--ink); font-weight: 600; }
+  .lanes { position: relative; height: 196px; margin-bottom: 30px; }
+  .lane { position: absolute; left: 0; right: 0; height: 52px; }
+  .lane .who { position: absolute; left: 0; top: 0; height: 52px; width: 110px; font: 600 24px/52px 'Barlow Condensed'; letter-spacing: .12em; color: var(--dim); }
+  .track { position: absolute; left: 120px; right: 0; top: 0; height: 52px; }
+  .blk { position: absolute; top: 0; height: 52px; border-radius: 8px; background: var(--cell-hi); border: 1px solid #2c3139; padding: 0 14px; display: flex; align-items: center; overflow: hidden; white-space: nowrap; font: 500 22px/1 'Barlow'; color: var(--ink);
+         transition: left .9s cubic-bezier(.2,.8,.2,1), top .9s cubic-bezier(.2,.8,.2,1), width .9s cubic-bezier(.2,.8,.2,1), background-color .5s, opacity .5s; }
+  .blk.done { opacity: .35; }
+  .blk.now { background: #2a2a20; border-color: var(--amber); }
+  .blk.over { background: repeating-linear-gradient(135deg, #3a1d18 0 10px, #2a1714 10px 20px); border-color: var(--late); }
+  .blk.moved { background: #182a20; border-color: var(--go); }
+  .blk.after { opacity: .5; border-style: dashed; }
+  .layer { position: absolute; inset: 0; }
+  .blk i { margin-left: auto; padding-left: 12px; font: 600 17px/1 'Barlow Condensed'; font-style: normal; letter-spacing: .14em; color: var(--amber); }
+  .nowline { position: absolute; top: -14px; bottom: -14px; width: 3px; background: var(--ink); border-radius: 2px; box-shadow: 0 0 0 6px #f3efe60f; }
+  .gateline { position: absolute; top: -14px; bottom: -44px; width: 0; border-left: 3px dashed var(--amber); }
+  .gateline span { position: absolute; bottom: 0; left: 10px; font: 600 20px/1 'Barlow Condensed'; letter-spacing: .16em; color: var(--amber); white-space: nowrap; }
+
+  /* ---------- re-route banner ---------- */
+  #banner { position: absolute; left: 72px; right: 72px; bottom: 40px; display: grid; grid-template-columns: auto 1fr auto; gap: 28px; align-items: center; padding: 20px 28px; background: #15171b; border: 2px solid var(--amber); border-radius: 14px;
+            transform: translateY(24px); opacity: 0; transition: transform .6s cubic-bezier(.2,.8,.2,1), opacity .5s; box-shadow: 0 30px 80px #000a; }
+  #banner.show { transform: none; opacity: 1; }
+  #banner .k { font: 700 30px/1 'Barlow Condensed'; letter-spacing: .2em; color: var(--amber); }
+  #banner .t { font: 500 30px/1.25 'Barlow'; }
+  #banner .alexa { color: #31c6f4; font-weight: 600; }
+  #banner .u { font: 500 24px/1.2 'Barlow'; color: var(--dim); text-align: right; }
+
+  /* ---------- voice + footer ---------- */
+  footer { display: flex; justify-content: space-between; align-items: center; min-height: 64px; }
+  .voice { display: flex; align-items: center; gap: 18px; font: 500 28px/1.2 'Barlow'; color: var(--dim); min-height: 64px; }
+  .voice .dot { width: 18px; height: 18px; border-radius: 50%; background: #2c3139; flex: none; }
+  .voice.live .dot { background: #31c6f4; box-shadow: 0 0 0 8px #31c6f41f; }
+  .voice .who { color: var(--ink); font-weight: 600; }
+  .voice .alexa { color: #31c6f4; font-weight: 600; }
+  .note { font: 500 18px/1 'Barlow Condensed'; letter-spacing: .14em; color: var(--faint); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ch.in, .ch.out { animation: none; }
+    .blk, .tag, #banner { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <header>
+    <div>
+      <div class="eyebrow">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z" fill="currentColor"/><rect x="3" y="26" width="26" height="2.4" rx="1.2" fill="currentColor"/></svg>
+        DEPARTURES
+      </div>
+      <h1>School run</h1>
+    </div>
+    <div class="clockwrap">
+      <div class="gate">
+        <div class="label">GATE CLOSES</div>
+        <div class="when">7:40 · <span class="left" id="left">22 MIN</span></div>
+      </div>
+      <div id="clock" aria-label="Time now">7:18</div>
+    </div>
+  </header>
+
+  <table aria-label="Who is doing what">
+    <colgroup><col class="c-name"><col class="c-now"><col class="c-then"><col class="c-status"><col class="c-ready"></colgroup>
+    <thead><tr><th>TRAVELLER</th><th>NOW</th><th>THEN</th><th>STATUS</th><th class="r">READY</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <section class="runway" aria-label="Runway: time until the gate closes">
+    <div class="rw-head">
+      <div class="label">RUNWAY</div>
+      <div class="learned">Learned this week: <b>Isha's shower takes 14 minutes</b>, not the 8 she planned.</div>
+    </div>
+    <div class="lanes" id="lanes"></div>
+  </section>
+
+  <footer>
+    <div class="voice" id="voice"><span class="dot"></span><span id="voiceText">Say “Alexa, I'm done” when you finish a step.</span></div>
+    <div class="note">STYLE FRAME · SCRIPTED MORNING · 20× SPEED</div>
+  </footer>
+
+  <div id="banner" role="status" aria-live="polite">
+    <div class="k">RE-ROUTED</div>
+    <div class="t" id="bannerText"></div>
+    <div class="u">Say “undo”<br>to keep the old plan</div>
+  </div>
+</div>
+
+<script>
+// A scripted morning, to show the idea. In the product these numbers come from the planner and from
+// durations the household has actually taken, learned over past mornings.
+const P = new URLSearchParams(location.search);
+const SPEED = Number(P.get('speed') ?? 20);
+const m = (hhmm) => { const [h, mm] = hhmm.split(':').map(Number); return (h * 60 + mm) * 60; };
+const START = m('7:18'), GATE = m('7:40'), VIEW0 = m('7:12'), VIEW1 = m('7:48');
+const EVENT = m('7:26') + 20, REPLAN = m('7:26') + 50, END = m('7:41');
+
+const planA = {
+  aarav: [{ k: 'a1', n: 'Breakfast', at: m('7:18'), d: 12, was: 8 }, { k: 'a2', n: 'Brush teeth', d: 4 }, { k: 'a3', n: 'Shoes and bag', d: 5 }],
+  isha:  [{ k: 'i1', n: 'Shower', at: m('7:12'), d: 14, was: 8 }, { k: 'i2', n: 'Get dressed', d: 6 }, { k: 'i3', n: 'Breakfast', d: 4 }, { k: 'bag', n: 'Pack bag', d: 3 }],
+  dad:   [{ k: 'd1', n: 'Pack lunches', at: m('7:20'), d: 8 }, { k: 'dish', n: 'Unload dishwasher', d: 6 }, { k: 'd3', n: 'Start the car', d: 3 }],
+};
+// After "Isha's still in the shower": shower +5, breakfast to go, Dad packs her bag, dishwasher after drop-off.
+const planB = {
+  aarav: planA.aarav,
+  isha:  [{ k: 'i1', n: 'Shower', at: m('7:12'), d: 19, over: 5, was: 8 }, { k: 'i2', n: 'Get dressed', d: 6 }, { k: 'i3', n: 'Breakfast to go', d: 2, moved: true }],
+  dad:   [{ k: 'd1', n: 'Pack lunches', at: m('7:20'), d: 8 }, { k: 'bag', n: "Isha's bag", d: 3, moved: true }, { k: 'd3', n: 'Start the car', d: 3 }, { k: 'dish', n: 'Dishwasher, after drop-off', at: m('7:41'), d: 6, after: true }],
+};
+// Between the overrun and the re-plan, the board shows the problem honestly.
+const planLate = { aarav: planA.aarav, isha: planA.isha.map((s, i) => (i === 0 ? { ...s, d: 19, over: 5 } : s)), dad: planA.dad };
+const people = [['aarav', 'AARAV'], ['isha', 'ISHA'], ['dad', 'DAD']];
+
+function timeline(steps) {
+  let t = steps[0].at;
+  return steps.map((s) => { const start = s.at ?? t; const end = start + s.d * 60; if (!s.after) t = end; return { ...s, start, end }; });
+}
+const fmt = (sec) => { const h = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60); return `${h}:${String(mm).padStart(2, '0')}`; };
+
+// ---------- split-flap ----------
+function flap(el, text, width, cls) {
+  text = text.toUpperCase().padEnd(width).slice(0, width);
+  if (cls !== undefined) el.className = `flap ${cls}`;
+  while (el.children.length < width) { const c = document.createElement('span'); c.className = 'cell'; c.innerHTML = '<span class="ch"> </span>'; el.append(c); }
+  [...el.children].forEach((cell, i) => {
+    const ch = text[i];
+    const cur = cell.querySelector('.ch:not(.out)');
+    cell.classList.toggle('blank', ch === ' ');
+    if (cur && cur.textContent === ch) return;
+    if (cur) { cur.classList.add('out'); cur.addEventListener('animationend', () => cur.remove(), { once: true }); }
+    const n = document.createElement('span');
+    n.className = 'ch in'; n.textContent = ch; n.style.animationDelay = `${i * 22}ms`;
+    cell.append(n);
+  });
+}
+
+// ---------- build ----------
+const rows = document.getElementById('rows'), lanes = document.getElementById('lanes');
+const ui = {};
+people.forEach(([id, name], i) => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="name">${name}</td><td><span class="flap" data-k="now"></span></td><td class="then" data-k="then"></td><td><span class="flap" data-k="status"></span></td><td class="ready" data-k="ready"></td>`;
+  rows.append(tr);
+  const lane = document.createElement('div');
+  lane.className = 'lane'; lane.style.top = `${i * 68}px`;
+  lane.innerHTML = `<div class="who">${name}</div><div class="track"></div>`;
+  lanes.append(lane);
+  ui[id] = { lane: i, now: tr.querySelector('[data-k=now]'), then: tr.querySelector('[data-k=then]'), status: tr.querySelector('[data-k=status]'), ready: tr.querySelector('[data-k=ready]'), track: lane.querySelector('.track') };
+});
+const track0 = ui.aarav.track;
+const blocks = new Map();
+const layer = document.createElement('div'); layer.className = 'layer'; lanes.append(layer);
+const nowline = document.createElement('div'); nowline.className = 'nowline';
+const gateline = document.createElement('div'); gateline.className = 'gateline'; gateline.innerHTML = '<span>GATE 7:40</span>';
+lanes.append(nowline, gateline);
+const X = (sec) => 120 + ((sec - VIEW0) / (VIEW1 - VIEW0)) * track0.clientWidth;
+
+function render(t) {
+  const plan = t < EVENT ? planA : t < REPLAN ? planLate : planB;
+  document.getElementById('clock').textContent = fmt(t);
+  document.getElementById('left').textContent = t < GATE ? `${Math.ceil((GATE - t) / 60)} MIN` : 'CLOSED';
+  const seen = new Set();
+  for (const [id] of people) {
+    const steps = timeline(plan[id]);
+    const live = steps.filter((s) => !s.after);
+    const cur = live.find((s) => t >= s.start && t < s.end);
+    const next = cur ? live[live.indexOf(cur) + 1] : null;
+    const ready = live.at(-1).end;
+    const u = ui[id];
+    flap(u.now, cur ? cur.n : t >= ready ? 'Ready to go' : '', 17);
+    const thenText = next ? next.n : cur ? 'Gate' : '';
+    if (u.then.textContent !== thenText) u.then.textContent = thenText;
+    let status, cls;
+    if (t >= ready) [status, cls] = ['READY', 'status-done'];
+    else if (ready > GATE) [status, cls] = [`DELAYED +${Math.round((ready - GATE) / 60)}`, 'status-late'];
+    else if (cur && cur === live.at(-1)) [status, cls] = ['BOARDING', 'status-board'];
+    else [status, cls] = ['ON TIME', 'status-ok'];
+    flap(u.status, status, 10, cls);
+    const rt = fmt(ready);
+    if (u.ready.textContent !== rt) u.ready.textContent = rt;
+    u.ready.style.color = ready > GATE ? 'var(--late)' : '';
+
+    steps.forEach((s) => {
+      seen.add(s.k);
+      let b = blocks.get(s.k);
+      if (!b) { b = document.createElement('div'); layer.append(b); blocks.set(s.k, b); }
+      const left = X(s.start), width = X(s.end) - X(s.start) - 6;
+      b.style.left = `${left}px`; b.style.top = `${u.lane * 68}px`; b.style.width = `${Math.max(width, 8)}px`;
+      const label = width > 150 ? `${s.n} · ${s.d}` : width > 54 ? `${s.d}` : '';
+      const was = s.was && width > 260 ? `<i>WAS ${s.was}</i>` : '';
+      const html = `<span>${label}</span>${was}`;
+      if (b.innerHTML !== html) b.innerHTML = html;
+      b.className = 'blk' + (t >= s.end && !s.after ? ' done' : '') + (cur === s ? ' now' : '') + (s.over && t >= EVENT ? ' over' : '') + (s.moved ? ' moved' : '') + (s.after ? ' after' : '');
+    });
+  }
+  for (const [k, b] of blocks) if (!seen.has(k)) { b.remove(); blocks.delete(k); }
+  nowline.style.left = `${X(Math.min(t, VIEW1))}px`;
+  gateline.style.left = `${X(GATE)}px`;
+
+  const voice = document.getElementById('voice'), vt = document.getElementById('voiceText');
+  if (t >= EVENT && t < REPLAN) {
+    voice.classList.add('live');
+    vt.innerHTML = '<span class="who">Mum:</span> “Alexa, Isha’s still in the shower.”';
+  } else { voice.classList.remove('live'); vt.textContent = 'Say “Alexa, I’m done” when you finish a step.'; }
+  document.getElementById('banner').classList.toggle('show', t >= REPLAN && t < REPLAN + 300);
+  document.getElementById('bannerText').innerHTML = '<span class="alexa">Alexa:</span> “Isha’s five minutes over. Breakfast is to go, Dad’s packing her bag, and the dishwasher can wait. Everyone still leaves at 7:40.”';
+}
+
+// ---------- fit + clock ----------
+const stage = document.getElementById('stage');
+function fit() { const s = Math.min(innerWidth / 1920, innerHeight / 1080); stage.style.transform = `scale(${s}) translate(-50%, -50%)`; }
+addEventListener('resize', fit); fit();
+let t = P.has('t') ? m(P.get('t')) : START, last = performance.now(), paused = P.has('t');
+window.__setT = (hms) => { const [h, mm, ss = 0] = hms.split(':').map(Number); t = (h * 60 + mm) * 60 + ss; paused = true; };
+addEventListener('keydown', (e) => { if (e.key === ' ') paused = !paused; if (e.key === 'r') t = START; });
+function tick(now) {
+  if (!paused) { t += ((now - last) / 1000) * SPEED; if (t > END + 60) t = START; }
+  last = now;
+  render(Math.floor(t));
+  requestAnimationFrame(tick);
+}
+document.fonts.ready.then(() => requestAnimationFrame(tick));
+</script>
+</body>
+</html>
