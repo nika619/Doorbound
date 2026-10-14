@@ -1,0 +1,30 @@
+{
+  "name": "marquee",
+  "version": "0.1.0",
+  "description": "Say the occasion and your TV or Echo Show becomes a live, voice-run show. Self-hosted MCP server (spec 2025-11-25, Streamable HTTP) with an MCP App stage.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:view": "node scripts/build-view.mjs",
+    "start": "npm run build:view && tsx src/server/main.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

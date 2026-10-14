@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+.env
+*.log
+# Private working notes and local tooling: not part of the public submission
+HANDOFF.md
+MASTER_PROMPT.md
+research/
+.claude/
