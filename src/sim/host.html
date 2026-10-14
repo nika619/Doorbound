@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Marquee simulator</title>
+    <style>
+      body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: #0e0c13; color: #efe9dd; display: grid; grid-template-columns: 1fr 340px; gap: 16px; padding: 16px; min-height: 100vh; box-sizing: border-box; }
+      #views { display: flex; flex-wrap: wrap; gap: 16px; align-content: start; }
+      #views iframe { width: 640px; height: 360px; border: 1px solid #ffffff22; border-radius: 16px; background: #000; }
+      aside { display: grid; gap: 10px; align-content: start; }
+      button { min-height: 48px; border-radius: 10px; border: 1px solid #ffffff33; background: #1d1828; color: inherit; font: inherit; cursor: pointer; }
+      #status, #transcript { font-size: 13px; color: #b9b0a0; white-space: pre-wrap; }
+      #transcript { border-top: 1px solid #ffffff22; padding-top: 10px; max-height: 40vh; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <section id="views" aria-label="Screens"></section>
+    <aside>
+      <div id="status">Connecting…</div>
+      <button data-tool="start_show" data-args='{"title":"Aarav&apos;s 7th birthday","headline":"Happy Birthday Aarav","subline":"Seven today"}'>Start show</button>
+      <button data-tool="start_countdown" data-args='{"label":"Candles","seconds":60}'>Countdown, 60 seconds</button>
+      <button data-tool="set_score" data-args='{"home":"Blue","away":"Red","homeScore":2,"awayScore":1}'>Score 2–1</button>
+      <button data-tool="control_show" data-args='{"action":"pause"}'>Pause</button>
+      <button data-tool="control_show" data-args='{"action":"resume"}'>Resume</button>
+      <button id="second">Open a second screen</button>
+      <div id="transcript" aria-live="polite"></div>
+    </aside>
+    <script>
+      /*SCRIPT*/
+    </script>
+  </body>
+</html>
