@@ -26,16 +26,21 @@ export const householdSchema = z.object({
 });
 
 const ms = z.number().int().nonnegative();
+// A log-normal duration: ln(seconds) has mean mu and spread sigma. Bounds keep every duration between 1 s and a day.
+const mu = z.number().min(0).max(11.5);
+const sigma = z.number().min(0.01).max(3);
 export const taskSchema = z.object({
   key: z.string().max(80),
   stepId: id,
   forPerson: id,
   name,
-  sec: z.number().int().min(0).max(86_400),
+  mu,
+  sigma,
   state: z.enum(['todo', 'done', 'later', 'skipped']),
   doneAtMs: ms.optional(),
   quick: z.boolean().optional(),
   notBeforeMs: ms.optional(),
+  extend: z.object({ fromMs: ms, mu, sigma }).optional(),
 });
 export const laneSchema = z.object({ personId: id, startedAtMs: ms, tasks: z.array(taskSchema).max(LIMITS.people * LIMITS.steps) });
 export const changeSchema = z.object({ kind: z.enum(['quick', 'handoff', 'later', 'skip']), taskKey: z.string().max(80), name, from: id, to: id.optional(), savedSec: z.number().int() });
@@ -47,7 +52,7 @@ export const departureSchema = departureCore.extend({
 });
 
 const fileSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2), // 1 kept fixed step times; such a file is set aside like any unreadable one
   household: householdSchema,
   history: z.array(z.tuple([z.string().max(80), z.array(z.number().positive().max(86_400)).max(WINDOW)])).max(LIMITS.historyKeys),
   departure: departureSchema.nullable(),
@@ -101,7 +106,7 @@ export class Store {
     this.writing = (async () => {
       do {
         this.again = false;
-        const body = JSON.stringify({ version: 1, household: this.household, history: [...this.history], departure: this.departure });
+        const body = JSON.stringify({ version: 2, household: this.household, history: [...this.history], departure: this.departure });
         const tmp = `${this.file}.tmp`;
         await writeFile(tmp, body, { mode: 0o600 });
         await rename(tmp, this.file);

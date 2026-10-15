@@ -40,7 +40,7 @@ test('many saves in a burst coalesce and the last state wins', async () => {
 
 test('a tampered or corrupt file is set aside, not trusted and not deleted', async () => {
   const dir = await fresh();
-  await writeFile(join(dir, 'household.json'), JSON.stringify({ version: 1, household: { people: [{ id: '../etc', name: 'x', steps: [] }] }, history: [], departure: null }));
+  await writeFile(join(dir, 'household.json'), JSON.stringify({ version: 2, household: { people: [{ id: '../etc', name: 'x', steps: [] }] }, history: [], departure: null }));
   const s = await Store.open(dir);
   assert.deepEqual(s.household, { people: [] });
   assert.ok((await readdir(dir)).some((f) => f.startsWith('household.json.unreadable-')));
