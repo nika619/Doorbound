@@ -199,7 +199,25 @@ const blocks = new Map<string, Blk>();
 const bands = new Map<string, Band>();
 const laneNames = new Map<string, HTMLElement>();
 let scale = { x0: 0, x1: 1, px: 1 };
-const LANE_H = 70;
+/** Runway lane height in board pixels; set by fit() for the size of the household. */
+let laneH = 70;
+
+/**
+ * Three people fill the board at full size. More share the same space: rows and lanes shrink
+ * together, and type and flaps with them, so eight people still fit on one screen.
+ */
+function fit(n: number) {
+  const SPACE = 570; // what rows and lanes get together at 1080p: three people fill it at full size
+  const row = Math.min(116, Math.floor((0.62 * SPACE) / n));
+  laneH = Math.min(70, Math.floor((0.38 * SPACE) / n));
+  const b = $('board');
+  b.style.setProperty('--row', `${row}px`);
+  b.style.setProperty('--fs', String(Math.min(1, (row - 10) / 56).toFixed(3)));
+  b.style.setProperty('--lane', `${laneH}px`);
+  b.style.setProperty('--blk', `${Math.round(laneH * 0.72)}px`);
+  b.style.setProperty('--n', String(n));
+  b.classList.toggle('dense', row < 90);
+}
 
 const nameOf = (id: string) => board?.people?.find((p) => p.id === id)?.name ?? id;
 
@@ -288,6 +306,8 @@ function structure() {
       : 'For example: "Alexa, Isha showers for 8 minutes, then gets dressed for 6, then has breakfast." Departures learns how long things really take, and keeps everyone on time.',
   );
 
+  fit(Math.max(1, dep?.lanes.length ?? people.length));
+
   // Rows, in household order; people who left the household are removed.
   const ids = new Set(people.map((p) => p.id));
   for (const [id, r] of rows) if (!ids.has(id)) (r.li.remove(), rows.delete(id));
@@ -334,7 +354,7 @@ function structure() {
     let n = laneNames.get(lane.personId);
     if (!n) laneNames.set(lane.personId, (n = el('div', 'lane-name', $('lanes'))));
     setText(n, nameOf(lane.personId).toUpperCase());
-    n.style.top = `${i * LANE_H}px`;
+    n.style.top = `${i * laneH}px`;
   });
   second(true);
 }
@@ -391,7 +411,7 @@ function second(animate = false) {
     band.e.hidden = !v.current;
     if (v.current) {
       const x = (v.earlyMs - scale.x0) * scale.px;
-      band.e.style.transform = `translate3d(${x}px,${li * LANE_H}px,0)`;
+      band.e.style.transform = `translate3d(${x}px,${li * laneH}px,0)`;
       band.e.style.width = `${Math.max(12, (v.lateMs - v.earlyMs) * scale.px)}px`;
       band.tick.style.transform = `translateX(${(v.readyMs - v.earlyMs) * scale.px - 1}px)`;
       if (band.e.dataset.tone !== chanceTone) band.e.dataset.tone = chanceTone;
@@ -400,7 +420,7 @@ function second(animate = false) {
       seen.add(b.key);
       let blk = blocks.get(b.key);
       const x = (b.startMs - scale.x0) * scale.px;
-      const y = li * LANE_H;
+      const y = li * laneH;
       const w = Math.max(10, (b.endMs - b.startMs) * scale.px - 6);
       const label = w > 170 ? `${b.name} · ${Math.round((b.endMs - b.startMs) / 60_000)}` : w > 56 ? `${Math.round((b.endMs - b.startMs) / 60_000)}` : '';
       const cls = `blk ${b.state}${b.overrun ? ' overrun' : ''}${b.endMs > dep.gateMs && b.state !== 'later' ? ' over' : ''}${moved.has(b.key) ? ' moved' : ''}${waits.has(b.key) ? ' later' : ''}`;
