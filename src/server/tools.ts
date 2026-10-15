@@ -5,9 +5,10 @@
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { markDone, project, setGate, startDeparture, stillGoing, undoReroute, type Change, type Departure, type PersonDef, type StepDef } from '../core/departure.ts';
+import { currentIndex, currentRemaining, everyoneOnTime, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
+import { quantile, sum } from '../core/stats.ts';
 import type { Audit } from './audit.ts';
 import { changeSchema, laneSchema, LIMITS, type Store } from './store.ts';
 
@@ -77,6 +78,9 @@ const minutes = (sec: number) => {
   const m = Math.max(1, Math.round(Math.abs(sec) / 60));
   return `${m} minute${m === 1 ? '' : 's'}`;
 };
+/** A chance as Alexa should say it: never a certain 0% or 100%. */
+const pct = (p: number) => `${Math.min(99, Math.max(1, Math.round(p * 100)))}%`;
+const aPct = (p: number) => `${/^(8|11%|18%)/.test(pct(p)) ? 'an' : 'a'} ${pct(p)}`;
 const list = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 
 function nameOf(store: Store, id: string) {
@@ -84,35 +88,36 @@ function nameOf(store: Store, id: string) {
 }
 
 function describeChange(store: Store, c: Change): string {
-  const owner = nameOf(store, c.taskKey.split('/')[0]);
-  if (c.kind === 'quick') return `${owner} has the quick version of ${c.name.toLowerCase()}`;
+  const [ownerId, stepId] = c.taskKey.split('/');
+  const owner = nameOf(store, ownerId);
+  const quick = store.household.people.find((p) => p.id === ownerId)?.steps.find((s) => s.id === stepId)?.quick?.name;
+  if (c.kind === 'quick') return `${owner} has ${quick ? quick.toLowerCase() : `the quick version of ${c.name.toLowerCase()}`}`;
   if (c.kind === 'handoff') return `${nameOf(store, c.to!)} takes over ${c.name.toLowerCase()} for ${owner}`;
   if (c.kind === 'later') return `${c.name.toLowerCase()} waits until after you leave`;
   return `${owner} skips ${c.name.toLowerCase()} today`;
 }
 
-/** One or two sentences: who is late, what changed, and whether it works. */
+/** One or two sentences: who is behind, what changed, and the chance it works. */
 function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
   const now = ctx.now();
   const views = project(dep, now);
-  const parts: string[] = [];
+  const who = (v: LaneView) => nameOf(ctx.store, v.personId);
   if (rerouted && dep.reroute) {
     const changes = dep.reroute.changes.map((c) => describeChange(ctx.store, c));
-    parts.push(changes.length ? `Re-routed. ${list(changes)}.` : 'Nothing in the routines can be moved.');
+    const lead = changes.length ? `Re-routed: ${list(changes)}.` : 'Nothing in the routines can be moved.';
     if (dep.reroute.stillLateSec > 0) {
-      const late = views.filter((v) => v.status === 'late').map((v) => nameOf(ctx.store, v.personId));
-      return `${parts[0]} Even so, ${list(late)} will be ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000)} would work.`;
+      const late = views.filter((v) => v.pOnTime < TARGET).map(who);
+      return `${lead} Even so, ${list(late)} will be about ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000)} would work.`;
     }
-    parts.push(`Everyone still leaves at ${clock(dep.gateMs)}.`);
-    return parts.join(' ');
+    return `${lead} Everyone still leaves at ${clock(dep.gateMs)}, now with ${aPct(everyoneOnTime(views))} chance.`;
   }
-  const late = views.filter((v) => v.status === 'late');
-  if (late.length) return `${list(late.map((v) => `${nameOf(ctx.store, v.personId)} is ${minutes(v.slackSec)} behind`))}. Leave at ${clock(dep.gateMs)}.`;
+  const behind = views.filter((v) => v.status === 'late' || v.status === 'tight');
+  if (behind.length) return `${list(behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, at ${pct(v.pOnTime)}`))}. Leave at ${clock(dep.gateMs)}.`;
   const going = views.filter((v) => v.status !== 'ready');
   if (!going.length) return `Everyone is ready. Leave at ${clock(dep.gateMs)}.`;
-  const tight = going.reduce((a, b) => (b.slackSec < a.slackSec ? b : a));
+  const tightest = going.reduce((a, b) => (b.pOnTime < a.pOnTime ? b : a));
   const left = Math.max(0, Math.round((dep.gateMs - now) / 60_000));
-  return `Everyone is on time. Leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${nameOf(ctx.store, tight.personId)} is the tightest, with ${minutes(tight.slackSec)} to spare.`;
+  return `Everyone is on time: ${aPct(everyoneOnTime(views))} chance you all leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, at ${pct(tightest.pOnTime)}.`;
 }
 
 // ---------- helpers ----------
@@ -287,7 +292,7 @@ export function buildServer(ctx: Ctx): McpServer {
       description: 'Use when someone is taking longer than planned, for example "Isha\'s still in the shower" or "Aarav needs five more minutes". Re-plans the morning so everyone still makes the departure if the household allows it, and says what changed. Returns the board.',
       inputSchema: z.object({
         person: name.describe('Who is running over'),
-        extraMinutes: z.number().min(1).max(60).optional().describe('How much longer they need, if said. Otherwise about a third of the planned time, at least two minutes.'),
+        extraMinutes: z.number().min(1).max(60).optional().describe('How much longer they need, if said. Otherwise the long end of what the step usually still needs.'),
       }),
       ...out,
       _meta: { ui },
@@ -297,10 +302,13 @@ export function buildServer(ctx: Ctx): McpServer {
       if (!dep) return refuse(NO_DEPARTURE);
       const p = findPerson(ctx, person);
       if (!p) return noOne(ctx, person);
-      const task = dep.lanes.find((l) => l.personId === p.id)?.tasks.find((t) => t.state === 'todo');
-      if (!task) return refuse(`${p.name} has nothing left to do.`);
-      const extra = Math.round((extraMinutes ?? Math.max(2, Math.round(task.sec / 180))) * 60);
-      const rerouted = commit(ctx, 'still_going', stillGoing(dep, p.id, extra, ctx.now()), p.id);
+      const now = ctx.now();
+      const lane = dep.lanes.find((l) => l.personId === p.id);
+      const idx = lane ? currentIndex(lane) : -1;
+      if (!lane || idx < 0) return refuse(`${p.name} has nothing left to do.`);
+      // Nobody said how long: plan for the long end (the TARGET quantile) of what this step usually still needs.
+      const extra = Math.round(extraMinutes !== undefined ? extraMinutes * 60 : Math.max(120, quantile(sum([currentRemaining(lane, idx, now)])!, TARGET)));
+      const rerouted = commit(ctx, 'still_going', stillGoing(dep, p.id, extra, now), p.id);
       return say(ctx, rerouted ? summary(ctx, ctx.store.departure!, true) : `Noted, ${minutes(extra)} more for ${p.name}. ${summary(ctx, ctx.store.departure!, false)}`);
     },
   );
