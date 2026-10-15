@@ -103,7 +103,7 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
   const who = (v: LaneView) => nameOf(ctx.store, v.personId);
   if (rerouted && dep.reroute) {
     const changes = dep.reroute.changes.map((c) => describeChange(ctx.store, c));
-    const lead = changes.length ? `Re-routed: ${list(changes)}.` : 'Nothing in the routines can be moved.';
+    const lead = `Re-routed: ${list(changes)}.`;
     if (dep.reroute.stillLateSec > 0) {
       const late = views.filter((v) => v.pOnTime < TARGET).map(who);
       return `${lead} Even so, ${list(late)} will be about ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000)} would work.`;
@@ -113,7 +113,10 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
     return `${lead} Everyone still leaves at ${clock(dep.gateMs)}${helped.length ? `, and ${list(helped)}` : ''}.`;
   }
   const behind = views.filter((v) => v.status === 'late' || v.status === 'tight');
-  if (behind.length) return `${list(behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, at ${pct(v.pOnTime)}`))}. Leave at ${clock(dep.gateMs)}.`;
+  if (behind.length) {
+    const works = Math.ceil(Math.max(...behind.map((v) => v.readyMs)) / 60_000) * 60_000;
+    return `${list(behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, at ${pct(v.pOnTime)}`))}. Leave at ${clock(dep.gateMs)}, or at ${clock(works)} to be sure.`;
+  }
   const going = views.filter((v) => v.status !== 'ready');
   if (!going.length) return `Everyone is ready. Leave at ${clock(dep.gateMs)}.`;
   const tightest = going.reduce((a, b) => (b.pOnTime < a.pOnTime ? b : a));

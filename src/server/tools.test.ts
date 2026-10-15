@@ -33,7 +33,7 @@ test('the demo morning, as Alexa says it', async () => {
   const over = await say(14.5, 'still_going', { person: 'Isha', extraMinutes: 8 });
   assert.match(over.text, /^Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha\. Everyone still leaves at 7:47, and Isha is now at (8[5-9]|9\d)%\.$/);
   const undo = await say(14.6, 'undo_reroute');
-  assert.match(undo.text, /^Back to the old plan\. Isha is running late, at \d+%\. Leave at 7:47\.$/);
+  assert.match(undo.text, /^Back to the old plan\. Isha is running late, at \d+%\. Leave at 7:47, or at 7:5\d to be sure\.$/);
   const status = await say(15, 'departure_status');
   assert.ok(!status.error && status.board!.rev > start.board!.rev);
 
