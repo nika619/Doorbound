@@ -1,132 +1,256 @@
-// Re-plans a departure so everyone makes the gate, with as few and as gentle changes as possible.
+// Re-plans a departure so everyone is ready by the gate with TARGET (85%) confidence, with the
+// gentlest set of changes.
 //
-// Changes, gentlest first: a quicker version of a step (cost 1), someone else does it (2),
-// it waits until after the departure (3), it is skipped today (4). A helper with too little
-// spare time can free some by making their own flexible steps quicker or later, the same way.
+// Changes and their costs: a quicker version of a step (1), someone else does it (2), it waits until
+// after the departure (3), it is skipped today (4). The plan is the cheapest set of changes, at most one
+// per step, after which everyone makes the gate; among equally cheap plans, the one most likely to get
+// the whole household there. A helper with too little spare time can free some the same way.
 //
-// The cheapest set of changes is a covering problem (NP-hard in general). With a few dozen
-// steps a greedy pass is fast, predictable and easy to say out loud: for each late person, the
-// gentlest kind of change first; within a kind, the smallest change that closes the gap, else
-// the biggest and continue. Fewest changes, least overshoot.
+// Search: iterative deepening on total cost, depth-first over steps in a fixed order so each set of
+// changes is met once. A person's remaining morning is a mean and a variance (stats.ts), so a change
+// moves two numbers on at most two people, in O(1), and is undone by restoring them. Two admissible
+// prunes: work only leaves a person's morning through a change to one of their own steps, so someone
+// still late with none of their steps left in the order is a dead end; and each person still late needs
+// at least one more change, of cost 1 or more. Checked optimal against brute force in the tests.
 //
-// Guarantees (property-tested): nobody on time is made late; a step in progress is never
-// touched; only changes the household allowed are made; the same input gives the same plan.
-// Cost: O(k log k) per late person for k candidate changes; O(P·T·log(P·T)) overall.
+// When no plan gets everyone there, the best effort is exact too: a binary search for the least lateness
+// any plan can reach (feasibility only grows with the lateness allowed), then the cheapest plan reaching
+// it. A node budget caps the work; past it, a greedy pass stands in. Always: nobody on time is made late,
+// a step in progress is never touched, only changes the household allowed are made, and the same input
+// gives the same plan.
 
-import { estimate, type History } from './learn.ts';
-import { applyChanges, currentIndex, project, type Change, type ChangeKind, type Departure, type Household, type Lane, type StepDef } from './departure.ts';
+import type { History } from './learn.ts';
+import { applyChanges, currentIndex, durationOf, laneMoments, project, TARGET, type Change, type ChangeKind, type Departure, type Household, type StepDef } from './departure.ts';
+import { cdf, moments, posterior, quantile, sum, type Moments } from './stats.ts';
 
 interface Option {
   kind: ChangeKind;
   cost: number;
   taskKey: string;
   name: string;
-  from: string;
-  savedMs: number;
-  to?: string;
-  /** Time the helper needs, for a handoff. */
-  helperMs?: number;
+  /** Lane giving the step up, and lane taking it on (-1 for none). */
+  from: number;
+  to: number;
+  /** What the change does to the giving lane, and what the taking lane takes on. */
+  dFrom: Moments;
+  add: Moments | null;
 }
 
-const COSTS = [1, 2, 3, 4] as const;
+export const COST: Record<ChangeKind, number> = { quick: 1, handoff: 2, later: 3, skip: 4 };
+/** Plans looked at before settling for the greedy one. Real households stay far below it. */
+export const NODE_BUDGET = 20_000;
+/** A changed lane must clear the gate by this much, so rounding in the running sums never flips a verdict. */
+const EPS_MS = 1;
 
-/** Ascending by saving, ties by key: deterministic order for the binary search below. */
-const bySaving = (a: Option, b: Option) => a.savedMs - b.savedMs || a.taskKey.localeCompare(b.taskKey) || (a.to ?? '').localeCompare(b.to ?? '');
+export interface Plan {
+  changes: Change[];
+  /** Seconds the latest person is still late at the target confidence (0 when the plan works). */
+  stillLateSec: number;
+  /** The search finished: no plan is less late, and none as late is cheaper. */
+  optimal: boolean;
+}
 
-/** Index of the smallest option saving at least `needMs`, else of the biggest. O(log k). */
-function pickIndex(sorted: Option[], needMs: number): number {
-  let lo = 0;
-  let hi = sorted.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (sorted[mid].savedMs >= needMs) hi = mid;
-    else lo = mid + 1;
+export function findReroute(dep: Departure, household: Household, history: History, nowMs: number): Plan {
+  const views = project(dep, nowMs);
+  const P = dep.lanes.length;
+  const gateSec = (dep.gateMs - nowMs) / 1000;
+  const mean = new Float64Array(P);
+  const variance = new Float64Array(P);
+  const touched = new Int32Array(P);
+  for (let i = 0; i < P; i++) {
+    const m = laneMoments(dep.lanes[i], nowMs);
+    mean[i] = m.mean;
+    variance[i] = m.variance;
   }
-  return lo < sorted.length ? lo : sorted.length - 1;
-}
+  const okAtStart = views.map((v) => v.readyMs <= dep.gateMs);
 
-export function findReroute(dep: Departure, household: Household, history: History, nowMs: number): { changes: Change[]; stillLateSec: number } {
-  const ready = new Map(project(dep, nowMs).map((v) => [v.personId, v.readyMs]));
-  const defs = new Map(household.people.map((p) => [p.id, new Map(p.steps.map((s) => [s.id, s]))]));
-  const lanes = new Map(dep.lanes.map((l) => [l.personId, l]));
-  const used = new Set<string>();
-  const changes: Change[] = [];
+  const dist = (i: number) => sum([{ mean: mean[i], variance: Math.max(0, variance[i]) }]);
+  /** How far past the gate lane i is ready, at the target confidence, in ms. Same arithmetic as projectLane. */
+  const over = (i: number) => (mean[i] > 0 ? nowMs + quantile(dist(i)!, TARGET) * 1000 : views[i].readyMs) - dep.gateMs;
+  /** Lateness each lane may keep, in ms: none for anyone on time, some for anyone already late in a best effort. */
+  const allow = new Float64Array(P);
+  const ok = (i: number) => (!touched[i] && okAtStart[i]) || over(i) <= allow[i] - EPS_MS;
+  const pOn = (i: number) => (mean[i] > 0 ? cdf(dist(i)!, gateSec) : views[i].readyMs <= dep.gateMs ? 1 : 0);
 
-  // Every change the household allows on a lane's unstarted steps. The step in progress stays put:
-  // you cannot hand someone a half-finished shower.
-  function optionsFor(lane: Lane, withHandoffs: boolean): Option[] {
-    const out: Option[] = [];
+  if (okAtStart.every(Boolean)) return { changes: [], stillLateSec: 0, optimal: true };
+
+  // Candidate changes, step by step: late people first (latest first), then everyone else, each in
+  // their own order. Only unstarted steps: you cannot hand someone a half-finished shower.
+  const laneOf = new Map(dep.lanes.map((l, i) => [l.personId, i]));
+  const defs = new Map<string, StepDef>(household.people.flatMap((p) => p.steps.map((s) => [`${p.id}/${s.id}`, s])));
+  const order = [...dep.lanes.keys()].sort((a, b) => over(b) - over(a) || dep.lanes[a].personId.localeCompare(dep.lanes[b].personId));
+  const steps: Option[][] = [];
+  /** Position in `steps` of each lane's last changeable step, or -1. */
+  const lastOf = new Int32Array(P).fill(-1);
+  for (const li of order) {
+    const lane = dep.lanes[li];
     for (let i = currentIndex(lane) + 1; i < lane.tasks.length; i++) {
-      const task = lane.tasks[i];
-      if (task.state !== 'todo' || used.has(task.key)) continue;
-      const def: StepDef | undefined = defs.get(task.forPerson)?.get(task.stepId);
-      if (!def) continue;
-      const base = { taskKey: task.key, name: task.name, from: lane.personId, savedMs: task.sec * 1000 };
-      if (def.quick && !task.quick && def.quick.sec < task.sec) out.push({ ...base, kind: 'quick', cost: 1, savedMs: (task.sec - def.quick.sec) * 1000 });
-      if (withHandoffs)
-        for (const helper of def.helpers ?? [])
-          if (helper !== lane.personId && lanes.has(helper))
-            out.push({ ...base, kind: 'handoff', cost: 2, to: helper, helperMs: estimate(history, helper, task.stepId, def.statedSec) * 1000 });
-      if (def.canWait) out.push({ ...base, kind: 'later', cost: 3 });
-      if (def.optional) out.push({ ...base, kind: 'skip', cost: 4 });
-    }
-    return out;
-  }
-
-  const take = (o: Option) => {
-    used.add(o.taskKey);
-    ready.set(o.from, ready.get(o.from)! - o.savedMs);
-    changes.push({ kind: o.kind, taskKey: o.taskKey, name: o.name, from: o.from, to: o.to, savedSec: Math.round(o.savedMs / 1000) });
-  };
-
-  /** Pick changes from `options` to save `needMs`, gentlest kind first. Returns what is still needed. */
-  function cover(options: Option[], needMs: number, accept: (o: Option) => boolean): number {
-    for (const cost of COSTS) {
-      if (needMs <= 0) break;
-      const level = options.filter((o) => o.cost === cost).sort(bySaving);
-      while (needMs > 0 && level.length > 0) {
-        const pick = level.splice(pickIndex(level, needMs), 1)[0];
-        if (used.has(pick.taskKey) || !accept(pick)) continue;
-        take(pick);
-        needMs -= pick.savedMs;
+      const t = lane.tasks[i];
+      const def = defs.get(t.key);
+      if (t.state !== 'todo' || !def) continue;
+      const m = moments(t);
+      const gone = { mean: -m.mean, variance: -m.variance };
+      const base = { taskKey: t.key, name: t.name, from: li, to: -1, add: null };
+      const opts: Option[] = [];
+      if (def.quick && !t.quick) {
+        const q = moments(posterior(def.quick.sec));
+        if (q.mean < m.mean) opts.push({ ...base, kind: 'quick', cost: COST.quick, dFrom: { mean: q.mean - m.mean, variance: q.variance - m.variance } });
+      }
+      for (const h of def.helpers ?? []) {
+        const to = laneOf.get(h);
+        if (to !== undefined && to !== li) opts.push({ ...base, kind: 'handoff', cost: COST.handoff, to, dFrom: gone, add: moments(durationOf(history, h, t.stepId, def.statedSec)) });
+      }
+      if (def.canWait) opts.push({ ...base, kind: 'later', cost: COST.later, dFrom: gone });
+      if (def.optional) opts.push({ ...base, kind: 'skip', cost: COST.skip, dFrom: gone });
+      if (opts.length) {
+        lastOf[li] = steps.length;
+        steps.push(opts);
       }
     }
-    return needMs;
   }
 
-  /** Make room in a helper's morning by making their own flexible steps quicker or later. Plans first, commits only on success. */
-  function makeRoom(helper: string, needMs: number): boolean {
-    const own = optionsFor(lanes.get(helper)!, false);
-    const plan: Option[] = [];
-    for (const cost of COSTS) {
-      const level = own.filter((o) => o.cost === cost).sort(bySaving);
-      while (needMs > 0 && level.length > 0) {
-        const pick = level.splice(pickIndex(level, needMs), 1)[0];
-        if (plan.some((p) => p.taskKey === pick.taskKey)) continue;
-        plan.push(pick);
-        needMs -= pick.savedMs;
-      }
+  const chosen: Option[] = [];
+  function apply(o: Option): number[] {
+    const saved = [mean[o.from], variance[o.from], o.to < 0 ? 0 : mean[o.to], o.to < 0 ? 0 : variance[o.to]];
+    mean[o.from] += o.dFrom.mean;
+    variance[o.from] += o.dFrom.variance;
+    touched[o.from]++;
+    if (o.add) {
+      mean[o.to] += o.add.mean;
+      variance[o.to] += o.add.variance;
+      touched[o.to]++;
     }
-    if (needMs > 0) return false;
-    plan.forEach(take);
-    return true;
+    chosen.push(o);
+    return saved;
+  }
+  function undo(o: Option, saved: number[]) {
+    chosen.pop();
+    mean[o.from] = saved[0];
+    variance[o.from] = saved[1];
+    touched[o.from]--;
+    if (o.add) {
+      mean[o.to] = saved[2];
+      variance[o.to] = saved[3];
+      touched[o.to]--;
+    }
   }
 
-  const late = [...ready].filter(([, ms]) => ms > dep.gateMs).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  let stillLateMs = 0;
-  for (const [personId] of late) {
-    const remaining = cover(optionsFor(lanes.get(personId)!, true), ready.get(personId)! - dep.gateMs, (o) => {
-      if (o.kind !== 'handoff') return true;
-      // A helper who has finished everything starts the new task now, not when they last finished.
-      const startMs = () => Math.max(ready.get(o.to!)!, nowMs);
-      const short = startMs() + o.helperMs! - dep.gateMs;
-      if (short > 0 && !makeRoom(o.to!, short)) return false; // would make the helper late
-      ready.set(o.to!, startMs() + o.helperMs!);
-      return true;
-    });
-    if (remaining > 0) stillLateMs = Math.max(stillLateMs, remaining);
+  // ---------- exact: cheapest plan that gets everyone there ----------
+  let nodes = 0;
+  let exhausted = false;
+  /** Something in this level was cut only for cost, so a deeper level could still find a plan. */
+  let cut = false;
+  interface Found {
+    opts: Option[];
+    p: number;
+    lateMs: number;
   }
-  return { changes, stillLateSec: Math.ceil(stillLateMs / 1000) };
+
+  /** The cheapest plan keeping everyone within `lateMs` of the gate (those on time, on time), likeliest among equals. */
+  function solve(lateMs: number): Found | null {
+    for (let i = 0; i < P; i++) allow[i] = okAtStart[i] ? 0 : lateMs;
+    let best = null as Found | null; // `as`: assigned inside search(), which TS cannot see
+    function search(from: number, budget: number): void {
+      if (nodes++ >= NODE_BUDGET) {
+        exhausted = true;
+        return;
+      }
+      let late = 0;
+      for (let i = 0; i < P; i++)
+        if (!ok(i)) {
+          if (lastOf[i] < from) return; // nothing left in the order can help them
+          late++;
+        }
+      if (late === 0) {
+        let p = 1;
+        let worst = 0;
+        for (let i = 0; i < P; i++) {
+          p *= pOn(i);
+          worst = Math.max(worst, over(i));
+        }
+        if (!best || p > best.p) best = { opts: [...chosen], p, lateMs: worst };
+        return; // anything added would cost more
+      }
+      if (late > budget) {
+        cut = true;
+        return;
+      }
+      for (let k = from; k < steps.length && !exhausted; k++)
+        for (const o of steps[k])
+          if (o.cost > budget) cut = true;
+          else {
+            const saved = apply(o);
+            search(k + 1, budget - o.cost);
+            undo(o, saved);
+          }
+    }
+    for (let c = 0; !best && !exhausted; c++) {
+      cut = false;
+      search(0, c);
+      if (!cut) break; // the whole tree fitted in this level: no plan at any cost
+    }
+    return best;
+  }
+
+  /** Stand-in past the budget: one change at a time, each the one that most cuts the worst then the total lateness. */
+  function greedy(): Found {
+    allow.fill(0);
+    /** [worst, total] lateness in ms, or null if someone on time would be made late. */
+    function score(): [number, number] | null {
+      let worst = 0;
+      let total = 0;
+      for (let i = 0; i < P; i++) {
+        if (ok(i)) continue;
+        if (okAtStart[i]) return null;
+        const late = Math.max(0, over(i) + EPS_MS);
+        worst = Math.max(worst, late);
+        total += late;
+      }
+      return [worst, total];
+    }
+    const better = (a: [number, number], b: [number, number]) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+    const used = new Set<number>();
+    let current = score()!;
+    while (current[0] > 0) {
+      // O(K·P) per round for K candidate changes, at most K rounds.
+      let pick: { k: number; o: Option; s: [number, number] } | null = null;
+      for (let k = 0; k < steps.length; k++) {
+        if (used.has(k)) continue;
+        for (const o of steps[k]) {
+          const saved = apply(o);
+          const s = score();
+          undo(o, saved);
+          if (s && better(s, current) && (!pick || better(s, pick.s) || (!better(pick.s, s) && o.cost < pick.o.cost))) pick = { k, o, s };
+        }
+      }
+      if (!pick) break;
+      used.add(pick.k);
+      apply(pick.o);
+      current = pick.s;
+    }
+    return { opts: [...chosen], p: 0, lateMs: current[0] };
+  }
+
+  let found = solve(0);
+  if (!found && !exhausted) {
+    // Nobody can get everyone there: the least lateness any plan reaches, in whole seconds. At `hi`, changing nothing does.
+    const lateNow = Math.max(...okAtStart.map((okay, i) => (okay ? 0 : over(i))));
+    let lo = 1;
+    let hi = Math.ceil((lateNow + EPS_MS) / 1000);
+    while (lo < hi && !exhausted) {
+      const mid = (lo + hi) >> 1;
+      const f = solve(mid * 1000);
+      if (f) [hi, found] = [mid, f];
+      else lo = mid + 1;
+    }
+    found ??= { opts: [], p: 0, lateMs: lateNow };
+  }
+  if (exhausted && !(found && found.lateMs <= 0)) {
+    const g = greedy();
+    if (!found || g.lateMs < found.lateMs) found = g;
+  }
+  const toChange = (o: Option): Change => ({ kind: o.kind, taskKey: o.taskKey, name: o.name, from: dep.lanes[o.from].personId, to: o.to < 0 ? undefined : dep.lanes[o.to].personId, savedSec: Math.round(-o.dFrom.mean) });
+  return { changes: found!.opts.map(toChange), stillLateSec: Math.max(0, Math.ceil(found!.lateMs / 1000)), optimal: !exhausted };
 }
 
 /** Re-plan if anyone is late. Returns the same object when nobody is, so callers can skip work. */
