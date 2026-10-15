@@ -6,7 +6,7 @@
 // "now" line). Per second: text and geometry that actually changed. On a re-plan: blocks glide to
 // their new place (FLIP from positions we already hold, so no layout reads).
 
-import { laneTimeline, projectLane, type Change, type Lane, type LaneView } from '../core/departure.ts';
+import { everyoneOnTime, laneTimeline, projectLane, type Change, type Lane, type LaneView } from '../core/departure.ts';
 import { Bridge, windowPort } from './bridge.ts';
 
 // ---------- data ----------
@@ -41,11 +41,20 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 const setText = (e: HTMLElement, t: string) => {
   if (e.textContent !== t) e.textContent = t;
 };
+/** Plain words with one italic serif accent, the board's voice: "The <em>school run</em>". */
+function accent(e: HTMLElement, before: string, em: string, after = '') {
+  const key = `${before}|${em}|${after}`;
+  if (e.dataset.key === key) return;
+  e.dataset.key = key;
+  e.replaceChildren(before, el('em', '', undefined, em), after);
+}
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const hhmm = (ms: number) => {
   const d = new Date(ms);
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
+/** A chance as a person reads it: never a certain 0% or 100% while anything is left to do. */
+const pct = (p: number) => `${Math.min(99, Math.max(1, Math.round(p * 100)))}%`;
 
 // ---------- clock: the server's time, carried forward locally between syncs ----------
 
@@ -65,29 +74,92 @@ function syncClock(serverMs: number, sentPerf: number) {
   synced = true;
 }
 
+// ---------- sound: a flap clatter and a chime on a re-route, once someone has touched the screen ----------
+
+let audio: AudioContext | null = null;
+let noise: AudioBuffer | null = null;
+let soundOn = true;
+function unlock() {
+  try {
+    audio ??= new AudioContext();
+    void audio.resume();
+    if (!noise) {
+      // 12 ms of decaying noise: the slap of one flap
+      noise = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.012), audio.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+    }
+  } catch {
+    audio = null; // no audio here (or not allowed): the board is silent, nothing else changes
+  }
+}
+const live = () => (audio && noise && soundOn && audio.state === 'running' ? audio : null);
+/** `n` flaps falling 20 ms apart, as the letters do on screen. */
+function clatter(n: number) {
+  const a = live();
+  if (!a) return;
+  for (let i = 0; i < Math.min(n, 10); i++) {
+    const src = a.createBufferSource();
+    const gain = a.createGain();
+    const band = a.createBiquadFilter();
+    src.buffer = noise;
+    band.type = 'bandpass';
+    band.frequency.value = 1800 + Math.random() * 900;
+    gain.gain.value = 0.05;
+    src.connect(band).connect(gain).connect(a.destination);
+    src.start(a.currentTime + i * 0.02);
+  }
+}
+/** Two soft notes, rising: something on the board changed for you. */
+function chime() {
+  const a = live();
+  if (!a) return;
+  [659.25, 987.77].forEach((hz, i) => {
+    const o = a.createOscillator();
+    const g = a.createGain();
+    const t = a.currentTime + i * 0.14;
+    o.frequency.value = hz;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    o.connect(g).connect(a.destination);
+    o.start(t);
+    o.stop(t + 1);
+  });
+}
+
 // ---------- split-flap ----------
 
 class Flap {
   readonly root = el('span', 'flap');
   private chars: string[];
-  constructor(private readonly width: number) {
+  /** @param quiet no flip and no clatter: for numbers that tick over on their own */
+  constructor(
+    private readonly width: number,
+    private readonly quiet = false,
+  ) {
     this.chars = Array(width).fill(' ');
     this.root.setAttribute('aria-hidden', 'true');
     for (let i = 0; i < width; i++) el('span', 'cell blank', this.root).append(el('span', 'ch', undefined, ' '));
   }
-  set(text: string, tone: string) {
+  set(text: string, tone: string, align: 'left' | 'right' = 'left') {
     if (this.root.dataset.tone !== tone) this.root.dataset.tone = tone;
-    const next = text.toUpperCase().padEnd(this.width).slice(0, this.width);
+    const t = text.toUpperCase().slice(0, this.width);
+    const next = align === 'left' ? t.padEnd(this.width) : t.padStart(this.width);
+    let changed = 0;
     for (let i = 0; i < this.width; i++) {
       if (next[i] === this.chars[i]) continue;
       this.chars[i] = next[i];
       const cell = this.root.children[i] as HTMLElement;
       cell.classList.toggle('blank', next[i] === ' ');
       // A fresh element starts its animation by itself: no forced reflow to restart one.
-      const ch = el('span', reduced.matches ? 'ch' : 'ch in', undefined, next[i]);
-      if (!reduced.matches) ch.style.animationDelay = `${i * 20}ms`;
+      const still = reduced.matches || this.quiet;
+      const ch = el('span', still ? 'ch' : 'ch in', undefined, next[i]);
+      if (!still) ch.style.animationDelay = `${changed * 20}ms`;
       cell.replaceChildren(ch);
+      changed++;
     }
+    if (!this.quiet) clatter(changed);
   }
 }
 
@@ -103,6 +175,9 @@ interface Row {
   now: Flap;
   then: HTMLElement;
   status: Flap;
+  chance: Flap;
+  meter: HTMLElement;
+  fill: HTMLElement;
   ready: HTMLElement;
   done: HTMLButtonElement;
   label: HTMLElement;
@@ -115,35 +190,53 @@ interface Blk {
   html: string;
   cls: string;
 }
+interface Band {
+  e: HTMLDivElement;
+  tick: HTMLElement;
+}
 const rows = new Map<string, Row>();
 const blocks = new Map<string, Blk>();
+const bands = new Map<string, Band>();
 const laneNames = new Map<string, HTMLElement>();
 let scale = { x0: 0, x1: 1, px: 1 };
 const LANE_H = 70;
 
 const nameOf = (id: string) => board?.people?.find((p) => p.id === id)?.name ?? id;
 
+/** What the status flap says, and its tone. */
 function statusOf(v: LaneView, dep: Dep, t: number): [string, string] {
   const departed = t >= dep.gateMs;
   if (v.status === 'ready') return departed ? ['DEPARTED', 'done'] : ['READY', 'done'];
-  if (v.status === 'late') return [`DELAYED +${Math.max(1, Math.round(-v.slackSec / 60))}`, 'late'];
   if (departed) return ['LEFT LATE', 'late'];
+  if (v.status === 'late') return [`DELAYED +${Math.max(1, Math.round(-v.slackSec / 60))}`, 'late'];
+  if (v.status === 'tight') return ['TIGHT', 'tight'];
   return v.status === 'boarding' ? ['BOARDING', 'board'] : ['ON TIME', 'ok'];
 }
+/** The tone of a chance: what the meter and the numbers are coloured by. */
+const toneOf = (v: LaneView) => (v.status === 'ready' ? 'done' : v.status === 'late' ? 'late' : v.status === 'tight' ? 'tight' : 'ok');
 
-function rowFor(id: string): Row {
+function rowFor(id: string, index: number): Row {
   let r = rows.get(id);
   if (r) return r;
   const li = el('li', 'row', $('rows'));
+  li.style.animationDelay = `${index * 90}ms`;
   const sr = el('span', 'sr', li);
   const label = el('span', 'name', li);
   label.setAttribute('aria-hidden', 'true');
-  const now = new Flap(18);
-  li.append(now.root);
-  const then = el('span', 'then', li);
-  then.setAttribute('aria-hidden', 'true');
+  const doing = el('div', 'doing', li);
+  doing.setAttribute('aria-hidden', 'true');
+  const now = new Flap(17);
+  doing.append(now.root);
+  const then = el('span', 'then', doing);
   const status = new Flap(10);
   li.append(status.root);
+  const chanceBox = el('div', 'chance', li);
+  chanceBox.setAttribute('aria-hidden', 'true');
+  const chance = new Flap(3, true);
+  chance.root.classList.add('pct');
+  chanceBox.append(chance.root);
+  const meter = el('div', 'meter', chanceBox);
+  const fill = el('i', '', meter);
   const ready = el('span', 'ready', li);
   ready.setAttribute('aria-hidden', 'true');
   const done = el('button', 'done', li, 'DONE') as HTMLButtonElement;
@@ -168,7 +261,7 @@ function rowFor(id: string): Row {
     done.textContent = 'DONE';
     void act('step_done', { person: nameOf(id) });
   });
-  r = { li, sr, now, then, status, ready, done, label };
+  r = { li, sr, now, then, status, chance, meter, fill, ready, done, label };
   rows.set(id, r);
   return r;
 }
@@ -182,8 +275,12 @@ function structure() {
   $('runway').hidden = !hasDep;
   $('when').hidden = !hasDep;
   $('empty').hidden = hasDep;
-  setText($('title'), dep?.name ?? (people.length ? 'Next departure' : 'Departures'));
-  setText($('emptyBig'), people.length ? '' : 'Tell Alexa your mornings.');
+  $('ghost').hidden = !hasDep;
+  setText($('eyebrow'), hasDep ? 'DEPARTURES · TODAY' : 'DEPARTURES');
+  if (dep) accent($('title'), 'The ', dep.name.toLowerCase());
+  else accent($('title'), people.length ? 'The ' : '', people.length ? 'next departure' : 'Departures');
+  if (people.length) accent($('emptyBig'), 'Ready when ', 'you are', '.');
+  else accent($('emptyBig'), 'Tell Alexa your ', 'mornings', '.');
   setText(
     $('emptySay'),
     people.length
@@ -194,30 +291,35 @@ function structure() {
   // Rows, in household order; people who left the household are removed.
   const ids = new Set(people.map((p) => p.id));
   for (const [id, r] of rows) if (!ids.has(id)) (r.li.remove(), rows.delete(id));
-  for (const p of people) {
-    const r = rowFor(p.id);
+  people.forEach((p, i) => {
+    const r = rowFor(p.id, i);
     setText(r.label, p.name.toUpperCase());
     $('rows').append(r.li); // re-append keeps order; a no-op for the browser when already in place
-  }
+  });
   if (!dep) {
     for (const p of people) {
       const r = rows.get(p.id)!;
       r.now.set('', 'done');
       setText(r.then, '');
       r.status.set('SCHEDULED', 'done');
+      r.chance.set('', 'done');
+      r.fill.style.transform = 'scaleX(0)';
       setText(r.ready, '');
       setText(r.sr, `${p.name}: scheduled.`);
     }
     for (const b of blocks.values()) b.e.remove();
     blocks.clear();
+    for (const b of bands.values()) b.e.remove();
+    bands.clear();
     return;
   }
 
-  // Runway scale: fixed for the whole departure so nothing slides about.
+  // Runway scale: fixed for the whole departure so nothing slides about. Wide enough for the late end of everyone's spread.
   const t = now();
   const all = dep.lanes.flatMap((l) => laneTimeline(l, dep.gateMs, t));
+  const spread = dep.lanes.map((l) => projectLane(l, dep.gateMs, t).lateMs);
   const x0 = Math.min(dep.startedAtMs, ...all.map((b) => b.startMs)) - 60_000;
-  const x1 = Math.max(dep.gateMs + 8 * 60_000, ...all.map((b) => b.endMs)) + 60_000;
+  const x1 = Math.max(dep.gateMs + 8 * 60_000, ...all.map((b) => b.endMs), ...spread) + 60_000;
   const width = $('layer').clientWidth || 1646;
   scale = { x0, x1, px: width / (x1 - x0) };
   $('gateline').style.transform = `translateX(${(dep.gateMs - x0) * scale.px}px)`;
@@ -242,29 +344,56 @@ function second(animate = false) {
   if (!dep) return;
   const t = now();
   const departed = t >= dep.gateMs;
+  const minsLeft = Math.max(0, Math.ceil((dep.gateMs - t) / 60_000));
   setText($('clock'), hhmm(t));
   setText($('gate'), hhmm(dep.gateMs));
-  setText($('gateK'), departed ? 'DEPARTED' : 'GATE CLOSES');
-  setText($('left'), departed ? 'CLOSED' : `${Math.max(0, Math.ceil((dep.gateMs - t) / 60_000))} MIN`);
+  setText($('gateK'), departed ? 'DEPARTED' : 'LEAVE');
+  setText($('left'), departed ? 'CLOSED' : `${minsLeft} MIN`);
+  setText($('ghost'), departed ? '' : String(minsLeft));
 
   const seen = new Set<string>();
-  const live: string[] = [];
+  const late: string[] = [];
+  const views: LaneView[] = [];
   const moved = new Set((dep.reroute?.changes ?? []).filter((c) => c.kind !== 'later').map((c) => c.taskKey));
   const waits = new Set((dep.reroute?.changes ?? []).filter((c) => c.kind === 'later').map((c) => c.taskKey));
   dep.lanes.forEach((lane, li) => {
     const v = projectLane(lane, dep.gateMs, t);
+    views.push(v);
     const r = rows.get(lane.personId);
     const [status, tone] = statusOf(v, dep, t);
+    const chanceTone = toneOf(v);
     if (r) {
       r.now.set(v.current?.name ?? (v.status === 'ready' ? 'Ready to go' : ''), tone === 'late' ? 'late' : 'plain');
-      setText(r.then, v.next?.name ?? (v.current ? 'Gate' : ''));
+      const then = v.next?.name ?? (v.current ? 'out of the door' : '');
+      if (r.then.dataset.key !== then) {
+        r.then.dataset.key = then;
+        r.then.replaceChildren(...(then ? [el('b', '', undefined, 'THEN'), then] : []));
+      }
       r.status.set(status, tone);
+      r.chance.set(v.status === 'ready' ? '' : pct(v.pOnTime), chanceTone, 'right');
+      if (r.meter.dataset.tone !== chanceTone) r.meter.dataset.tone = chanceTone;
+      r.fill.style.transform = `scaleX(${v.status === 'ready' ? 1 : v.pOnTime.toFixed(3)})`;
       setText(r.ready, hhmm(v.readyMs));
       r.ready.classList.toggle('late', v.readyMs > dep.gateMs);
       r.done.disabled = !v.current;
-      const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}` : ''}, ready at ${hhmm(v.readyMs)}.`;
+      const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}` : ''}.`;
       setText(r.sr, sentence);
-      if (tone === 'late') live.push(sentence);
+      if (tone === 'late') late.push(sentence);
+    }
+    // The spread of when they will be ready, behind their steps.
+    let band = bands.get(lane.personId);
+    if (!band) {
+      const e = el('div', 'band', $('layer')) as HTMLDivElement;
+      band = { e, tick: el('i', '', e) };
+      bands.set(lane.personId, band);
+    }
+    band.e.hidden = !v.current;
+    if (v.current) {
+      const x = (v.earlyMs - scale.x0) * scale.px;
+      band.e.style.transform = `translate3d(${x}px,${li * LANE_H}px,0)`;
+      band.e.style.width = `${Math.max(12, (v.lateMs - v.earlyMs) * scale.px)}px`;
+      band.tick.style.transform = `translateX(${(v.readyMs - v.earlyMs) * scale.px - 1}px)`;
+      if (band.e.dataset.tone !== chanceTone) band.e.dataset.tone = chanceTone;
     }
     for (const b of laneTimeline(lane, dep.gateMs, t)) {
       seen.add(b.key);
@@ -297,24 +426,33 @@ function second(animate = false) {
     }
   });
   for (const [k, blk] of blocks) if (!seen.has(k)) (blk.e.remove(), blocks.delete(k));
-  footer(dep, live);
+
+  // Everyone on time: the chance that the whole household makes the gate, coloured by whoever is worst off.
+  const allTone = views.some((v) => v.status === 'late') ? 'late' : views.some((v) => v.status === 'tight') ? 'tight' : 'ok';
+  const allEl = $('all');
+  setText(allEl, views.every((v) => v.status === 'ready') ? 'ALL SET' : pct(everyoneOnTime(views)));
+  if (allEl.dataset.tone !== allTone) allEl.dataset.tone = allTone;
+  footer(dep, late);
 }
 
 let lastLive = '';
 function footer(dep: Dep, late: string[]) {
   const msg = $('msg');
   const ins = board?.insights?.[0];
-  setText($('learned'), ins ? `Learned: ${ins.person}'s ${ins.step.toLowerCase()} takes ${Math.round(ins.learnedSec / 60)} minutes, not the ${Math.round(ins.statedSec / 60)} planned.` : '');
+  if (ins) accent($('learned'), `Learned: ${ins.person}'s ${ins.step.toLowerCase()} takes `, `${Math.round(ins.learnedSec / 60)} minutes`, `, not ${Math.round(ins.statedSec / 60)}.`);
+  else $('learned').replaceChildren();
   setText($('tag'), rate > 1 ? `DEMO CLOCK ×${rate}` : '');
   let card = document.querySelector<HTMLElement>('.reroute');
   const rr = dep.reroute;
-  if (rr && (rr.changes.length || rr.stillLateSec)) {
+  if (rr && rr.changes.length) {
     const key = `${rr.atMs}:${rr.canUndo}`;
     if (!card || card.dataset.key !== key) {
+      const fresh = !card || card.dataset.at !== String(rr.atMs);
       card?.remove();
       card = el('div', `reroute${rr.stillLateSec ? ' stuck' : ''}`);
       card.dataset.key = key;
-      el('div', 'k', card, rr.stillLateSec ? 'STILL LATE' : 'RE-ROUTED');
+      card.dataset.at = String(rr.atMs);
+      el('div', 'k', card, rr.stillLateSec ? 'Still late.' : 'Re-routed.');
       const chips = el('div', 'chips', card);
       for (const c of rr.changes) el('span', '', chips, describe(c));
       if (rr.stillLateSec) el('span', '', chips, `Leave at ${hhmm(dep.gateMs + Math.ceil(rr.stillLateSec / 60) * 60_000)} to make it`);
@@ -325,7 +463,10 @@ function footer(dep: Dep, late: string[]) {
       }
       msg.hidden = true;
       $('foot').prepend(card);
-      announce(`Re-routed. ${rr.changes.map(describe).join('. ')}.`);
+      if (fresh) {
+        announce(`Re-routed. ${rr.changes.map(describe).join('. ')}.`);
+        chime();
+      }
     }
   } else {
     card?.remove();
@@ -356,21 +497,19 @@ function cardView() {
   const t = now();
   setText($('cardEyebrow'), dep ? `DEPARTURES · ${dep.name.toUpperCase()}` : 'DEPARTURES');
   const line = $('cardLine');
-  line.replaceChildren();
   if (!dep) {
-    line.append(document.createTextNode(board?.people?.length ? 'No departure running' : 'Tell Alexa your mornings'));
+    accent(line, board?.people?.length ? 'No departure ' : 'Tell Alexa your ', board?.people?.length ? 'yet' : 'mornings');
     $('cardChips').replaceChildren();
     return;
   }
-  line.append(document.createTextNode(`Leave ${hhmm(dep.gateMs)} · `));
-  el('b', '', line, t >= dep.gateMs ? 'departed' : `${Math.max(0, Math.ceil((dep.gateMs - t) / 60_000))} min`);
+  accent(line, `Leave ${hhmm(dep.gateMs)} · `, t >= dep.gateMs ? 'departed' : `${Math.max(0, Math.ceil((dep.gateMs - t) / 60_000))} min`);
   const chips = $('cardChips');
   chips.replaceChildren();
   for (const lane of dep.lanes) {
     const v = projectLane(lane, dep.gateMs, t);
     const [status, tone] = statusOf(v, dep, t);
-    const c = el('span', 'chip', chips, `${nameOf(lane.personId).toUpperCase()} · ${status}`);
-    c.dataset.tone = tone;
+    const c = el('span', 'chip', chips, `${nameOf(lane.personId).toUpperCase()} · ${v.current ? pct(v.pOnTime) : status}`);
+    c.dataset.tone = tone === 'board' ? 'ok' : tone;
   }
 }
 
@@ -394,6 +533,11 @@ function applyMode() {
 // Fit whenever the frame changes size, however that happens (window, host resizing the iframe, rotation).
 new ResizeObserver(() => applyMode()).observe(document.documentElement);
 $('open').addEventListener('click', () => void bridge?.requestDisplayMode('fullscreen').then(applyMode));
+addEventListener('pointerdown', unlock, { passive: true });
+$('sound').addEventListener('click', () => {
+  soundOn = !soundOn;
+  $('sound').setAttribute('aria-pressed', String(soundOn));
+});
 
 // ---------- talking to the server ----------
 
@@ -433,8 +577,7 @@ async function poll() {
       if (res.status === 204) {
         rate = Number(res.headers.get('X-Clock-Rate')) || 1;
         syncClock(Number(res.headers.get('X-Server-Now')), sent);
-      }
-      else if (res.ok) {
+      } else if (res.ok) {
         const body: unknown = await res.json();
         if (isBoard(body)) adopt(body, sent);
       } else throw new Error(String(res.status));
@@ -479,6 +622,7 @@ if (bridge) {
   }
 }
 $('board').classList.toggle('readonly', !bridge);
+$('sound').hidden = !bridge; // only a touch screen can switch it, and only a touch unlocks audio
 applyMode();
 await document.fonts.ready;
 void poll();
