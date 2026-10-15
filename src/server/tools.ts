@@ -287,7 +287,7 @@ export function buildServer(ctx: Ctx): McpServer {
       description: 'Use when someone is taking longer than planned, for example "Isha\'s still in the shower" or "Aarav needs five more minutes". Re-plans the morning so everyone still makes the departure if the household allows it, and says what changed. Returns the board.',
       inputSchema: z.object({
         person: name.describe('Who is running over'),
-        extraMinutes: z.number().min(1).max(60).optional().describe('How much longer they need, if said. Otherwise half the planned time, at least two minutes.'),
+        extraMinutes: z.number().min(1).max(60).optional().describe('How much longer they need, if said. Otherwise about a third of the planned time, at least two minutes.'),
       }),
       ...out,
       _meta: { ui },
@@ -299,7 +299,7 @@ export function buildServer(ctx: Ctx): McpServer {
       if (!p) return noOne(ctx, person);
       const task = dep.lanes.find((l) => l.personId === p.id)?.tasks.find((t) => t.state === 'todo');
       if (!task) return refuse(`${p.name} has nothing left to do.`);
-      const extra = Math.round((extraMinutes ?? Math.max(2, task.sec / 120)) * 60);
+      const extra = Math.round((extraMinutes ?? Math.max(2, Math.round(task.sec / 180))) * 60);
       const rerouted = commit(ctx, 'still_going', stillGoing(dep, p.id, extra, ctx.now()), p.id);
       return say(ctx, rerouted ? summary(ctx, ctx.store.departure!, true) : `Noted, ${minutes(extra)} more for ${p.name}. ${summary(ctx, ctx.store.departure!, false)}`);
     },
