@@ -118,7 +118,8 @@ function alexaSays(text: string, error = false) {
 }
 
 // ---------- the board view ----------
-let view: { iframe: HTMLIFrameElement; bridge: AppBridge } | null = null;
+// `ready` settles when the board finishes ui/initialize: the spec forbids sending it anything before that.
+let view: { iframe: HTMLIFrameElement; bridge: AppBridge; ready: Promise<void> } | null = null;
 let mode: 'inline' | 'fullscreen' = 'inline';
 function setMode(m: 'inline' | 'fullscreen') {
   mode = m;
@@ -142,7 +143,10 @@ async function openView(args: Record<string, unknown>, result: CallToolResult) {
     { serverTools: {}, logging: {} },
     { hostContext: { displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'], platform: 'web', theme: 'dark', locale: navigator.language } },
   );
+  let initialised!: () => void;
+  const ready = new Promise<void>((r) => (initialised = r));
   bridge.oninitialized = () => {
+    initialised();
     log('in', 'board view initialised (ui/initialize, protocol 2026-01-26)');
     void bridge.sendToolInput({ arguments: args });
     void bridge.sendToolResult(result);
@@ -164,7 +168,7 @@ async function openView(args: Record<string, unknown>, result: CallToolResult) {
     return r;
   };
   await bridge.connect(new PostMessageTransport(iframe.contentWindow!, iframe.contentWindow!));
-  view = { iframe, bridge };
+  view = { iframe, bridge, ready };
 }
 
 async function hear(utterance: string, who: string | null) {
@@ -188,7 +192,10 @@ async function hear(utterance: string, who: string | null) {
   if (board?.people) setPeople(board.people.map((p) => p.name));
   if (r.isError) return;
   if (!view) await openView(call.args, r);
-  else await view.bridge.sendToolResult(r);
+  else {
+    await view.ready;
+    await view.bridge.sendToolResult(r);
+  }
 }
 
 // ---------- input: voice, typing, suggestions ----------
@@ -251,6 +258,7 @@ $('play').addEventListener('click', async () => {
     await hear(line, who);
     // The customer taps "Open the board" on the inline card, as Alexa's design guide expects.
     if (minute === 0 && view) {
+      await view.ready;
       setMode('fullscreen');
       await view.bridge.sendHostContextChange({ displayMode: 'fullscreen' });
     }
