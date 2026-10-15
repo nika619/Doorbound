@@ -1,0 +1,44 @@
+// The demo morning through the real MCP tools, on a fixed clock: what Alexa would say at each step.
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { household, learnedHistory } from '../core/fixtures.ts';
+import { Audit } from './audit.ts';
+import { Store } from './store.ts';
+import { buildServer } from './tools.ts';
+
+test('the demo morning, as Alexa says it', async () => {
+  const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
+  store.household = household;
+  store.history = learnedHistory();
+  let now = new Date(2026, 9, 15, 7, 12).getTime(); // local 7:12
+  const server = buildServer({ store, audit: new Audit(await mkdtemp(join(tmpdir(), 'audit-'))), client: 'test', boardHtml: () => '<html></html>', now: () => now, clockRate: 1 });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  const client = new Client({ name: 'alexa', version: '1' });
+  await client.connect(a);
+  const say = async (minute: number, name: string, args: Record<string, unknown> = {}) => {
+    now = new Date(2026, 9, 15, 7, 12).getTime() + minute * 60_000;
+    const r = await client.callTool({ name, arguments: args });
+    return { text: (r.content as { text: string }[])[0].text, error: r.isError === true, board: r.structuredContent as { rev: number } | undefined };
+  };
+
+  const start = await say(0, 'start_departure', { leaveAt: '07:47' });
+  assert.match(start.text, /^School run started\. Everyone is on time\. Leave at 7:47, in 35 minutes\. Isha is the tightest, at 9\d%\.$/);
+  await say(8.1, 'step_done', { person: 'Dad' });
+  await say(12.1, 'step_done', { person: 'aarav' });
+  const over = await say(14.5, 'still_going', { person: 'Isha', extraMinutes: 8 });
+  assert.match(over.text, /^Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha\. Everyone still leaves at 7:47, and Isha is now at (8[5-9]|9\d)%\.$/);
+  const undo = await say(14.6, 'undo_reroute');
+  assert.match(undo.text, /^Back to the old plan\. Isha is running late, at \d+%\. Leave at 7:47\.$/);
+  const status = await say(15, 'departure_status');
+  assert.ok(!status.error && status.board!.rev > start.board!.rev);
+
+  const nobody = await say(15, 'step_done', { person: 'Zed' });
+  assert.ok(nobody.error);
+  assert.match(nobody.text, /The household is Aarav, Isha and Dad/);
+  await client.close();
+});

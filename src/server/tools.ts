@@ -5,7 +5,7 @@
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { currentIndex, currentRemaining, everyoneOnTime, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
+import { currentIndex, currentRemaining, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
 import { quantile, sum } from '../core/stats.ts';
@@ -80,7 +80,6 @@ const minutes = (sec: number) => {
 };
 /** A chance as Alexa should say it: never a certain 0% or 100%. */
 const pct = (p: number) => `${Math.min(99, Math.max(1, Math.round(p * 100)))}%`;
-const aPct = (p: number) => `${/^(8|11%|18%)/.test(pct(p)) ? 'an' : 'a'} ${pct(p)}`;
 const list = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 
 function nameOf(store: Store, id: string) {
@@ -109,7 +108,9 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
       const late = views.filter((v) => v.pOnTime < TARGET).map(who);
       return `${lead} Even so, ${list(late)} will be about ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000)} would work.`;
     }
-    return `${lead} Everyone still leaves at ${clock(dep.gateMs)}, now with ${aPct(everyoneOnTime(views))} chance.`;
+    const before = project(dep.reroute.before, now);
+    const helped = views.filter((_, i) => before[i].pOnTime < TARGET).map((v) => `${who(v)} is now at ${pct(v.pOnTime)}`);
+    return `${lead} Everyone still leaves at ${clock(dep.gateMs)}${helped.length ? `, and ${list(helped)}` : ''}.`;
   }
   const behind = views.filter((v) => v.status === 'late' || v.status === 'tight');
   if (behind.length) return `${list(behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, at ${pct(v.pOnTime)}`))}. Leave at ${clock(dep.gateMs)}.`;
@@ -117,7 +118,7 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
   if (!going.length) return `Everyone is ready. Leave at ${clock(dep.gateMs)}.`;
   const tightest = going.reduce((a, b) => (b.pOnTime < a.pOnTime ? b : a));
   const left = Math.max(0, Math.round((dep.gateMs - now) / 60_000));
-  return `Everyone is on time: ${aPct(everyoneOnTime(views))} chance you all leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, at ${pct(tightest.pOnTime)}.`;
+  return `Everyone is on time. Leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, at ${pct(tightest.pOnTime)}.`;
 }
 
 // ---------- helpers ----------
