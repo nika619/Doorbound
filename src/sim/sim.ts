@@ -207,7 +207,7 @@ $<HTMLFormElement>('say').addEventListener('submit', (e) => {
   input.value = '';
   void hear(text, speaker);
 });
-for (const s of ['Start the school run. We leave in 28 minutes.', "I'm done.", "Isha's still in the shower.", 'How are we doing?', 'We need to leave 5 minutes early.', 'Undo that.', 'What have you learned?']) {
+for (const s of ['Start the school run. We leave in 35 minutes.', "I'm done.", "Isha's still in the shower.", 'How are we doing?', 'We need to leave 5 minutes early.', 'Undo that.', 'What have you learned?']) {
   const b = el('button', '', $('tries'), s);
   b.type = 'button';
   b.addEventListener('click', () => void hear(s, speaker));
@@ -236,15 +236,19 @@ else {
 
 // ---------- the demo morning: the design-frame story, on the server's clock ----------
 const DEMO: [number, string | null, string][] = [
-  [0, 'Mum', 'Alexa, start the school run. We leave in 28 minutes.'],
+  [0, 'Mum', 'Alexa, start the school run. We leave in 35 minutes.'],
   [8.1, 'Dad', "I'm done with the lunches."],
   [12.1, 'Aarav', "I'm done with breakfast."],
-  [14.5, 'Mum', "Alexa, Isha's still in the shower."],
+  [14.5, 'Mum', "Alexa, Isha's still in the shower. Eight more minutes, she says."],
   [16.0, 'Mum', 'How are we doing?'],
-  [16.3, 'Aarav', "I'm done."],
-  [19.6, 'Isha', "I'm done."],
-  [21.4, 'Aarav', "I'm done."],
-  [23.8, 'Dad', "I'm done."],
+  [16.4, 'Aarav', "I'm done."],
+  [18.8, 'Dad', "I'm done."],
+  [21.0, 'Isha', "I'm done."],
+  [21.6, 'Aarav', "I'm done."],
+  [22.0, 'Dad', "I'm done."],
+  [25.0, 'Dad', "I'm done."],
+  [27.4, 'Isha', "I'm done."],
+  [29.6, 'Isha', "I'm done."],
 ];
 $('play').addEventListener('click', async () => {
   const play = $<HTMLButtonElement>('play');
