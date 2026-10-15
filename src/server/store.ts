@@ -57,6 +57,8 @@ export class Store {
   household: Household = { people: [] };
   history: History = new Map();
   departure: Departure | null = null;
+  /** Changes on every edit; starts from the clock so it never repeats across restarts. Screens compare it to skip work. */
+  rev = Date.now();
   private writing: Promise<void> | null = null;
   private again = false;
 
@@ -84,6 +86,10 @@ export class Store {
     store.history = new Map(parsed.data.history);
     store.departure = parsed.data.departure as Departure | null;
     return store;
+  }
+
+  touch(): void {
+    this.rev++;
   }
 
   /** Persist. Atomic (write then rename) and coalesced: at most one write in flight, one queued. */
