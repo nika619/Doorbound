@@ -4,6 +4,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
 
 const font = (family, weight, file) =>
@@ -15,6 +16,8 @@ const FONTS = [
 
 const sha = (text) => createHash('sha256').update(text, 'utf8').digest('base64');
 const between = (html, open, close) => [...html.matchAll(new RegExp(`${open}([\\s\\S]*?)${close}`, 'g'))].map((m) => m[1]);
+// Browsers turn CRLF into LF before hashing inline blocks, so hash (and ship) LF only.
+const lf = (text) => text.split(String.fromCharCode(13, 10)).join(String.fromCharCode(10));
 
 const pages = [
   { name: 'board', entry: 'src/board/board.ts', template: 'src/board/board.html' },
@@ -27,8 +30,8 @@ const manifest = {};
 for (const page of pages) {
   if (!existsSync(page.entry)) continue;
   const out = await build({ entryPoints: [page.entry], bundle: true, format: 'esm', target: 'es2022', platform: 'browser', minify: true, write: false, legalComments: 'none', define: { 'process.env.NODE_ENV': '"production"' } });
-  const js = out.outputFiles[0].text.replaceAll('</script', '<\\/script');
-  const html = readFileSync(page.template, 'utf8')
+  const js = lf(out.outputFiles[0].text).replaceAll('</script', '<\\/script');
+  const html = lf(readFileSync(page.template, 'utf8'))
     .replace('/*FONTS*/', () => FONTS)
     .replace('<script>/*SCRIPT*/</script>', () => `<script type="module">${js}</script>`);
   const hashes = { scripts: between(html, '<script type="module">', '</script>').map(sha), styles: between(html, '<style>', '</style>').map(sha) };
@@ -38,7 +41,6 @@ for (const page of pages) {
   }
   manifest[page.name] = hashes;
   writeFileSync(`dist/${page.name}.html`, html);
-  const gz = (await import('node:zlib')).gzipSync(html).length;
-  console.log(`dist/${page.name}.html  ${(html.length / 1024).toFixed(1)} kB  (${(gz / 1024).toFixed(1)} kB gzip, of which script ${(js.length / 1024).toFixed(1)} kB)`);
+  console.log(`dist/${page.name}.html  ${(html.length / 1024).toFixed(1)} kB  (${(gzipSync(html).length / 1024).toFixed(1)} kB gzip, of which script ${(js.length / 1024).toFixed(1)} kB)`);
 }
 writeFileSync('dist/manifest.json', JSON.stringify(manifest, null, 2));
