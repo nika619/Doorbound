@@ -326,6 +326,7 @@ function structure() {
   setText($('gatelabel'), `GATE ${hhmm(dep.gateMs)}`);
   for (const tick of document.querySelectorAll('.tick')) tick.remove();
   for (let m = Math.ceil(x0 / 300_000) * 300_000; m <= x1; m += 300_000) {
+    if (Math.abs(m - dep.gateMs) * scale.px < 150) continue; // the gate label speaks for that spot
     const tk = el('span', 'tick', $('layer'), hhmm(m));
     tk.style.left = `${(m - x0) * scale.px}px`;
   }
@@ -374,7 +375,7 @@ function second(animate = false) {
       if (r.meter.dataset.tone !== chanceTone) r.meter.dataset.tone = chanceTone;
       r.fill.style.transform = `scaleX(${v.status === 'ready' ? 1 : v.pOnTime.toFixed(3)})`;
       setText(r.ready, hhmm(v.readyMs));
-      r.ready.classList.toggle('late', v.readyMs > dep.gateMs);
+      if (r.ready.dataset.tone !== chanceTone) r.ready.dataset.tone = chanceTone;
       r.done.disabled = !v.current;
       const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}` : ''}.`;
       setText(r.sr, sentence);
@@ -432,11 +433,11 @@ function second(animate = false) {
   const allEl = $('all');
   setText(allEl, views.every((v) => v.status === 'ready') ? 'ALL SET' : pct(everyoneOnTime(views)));
   if (allEl.dataset.tone !== allTone) allEl.dataset.tone = allTone;
-  footer(dep, late);
+  footer(dep, late, views.every((v) => v.status === 'ready'));
 }
 
 let lastLive = '';
-function footer(dep: Dep, late: string[]) {
+function footer(dep: Dep, late: string[], allReady: boolean) {
   const msg = $('msg');
   const ins = board?.insights?.[0];
   if (ins) accent($('learned'), `Learned: ${ins.person}'s ${ins.step.toLowerCase()} takes `, `${Math.round(ins.learnedSec / 60)} minutes`, `, not ${Math.round(ins.statedSec / 60)}.`);
@@ -444,7 +445,7 @@ function footer(dep: Dep, late: string[]) {
   setText($('tag'), rate > 1 ? `DEMO CLOCK ×${rate}` : '');
   let card = document.querySelector<HTMLElement>('.reroute');
   const rr = dep.reroute;
-  if (rr && rr.changes.length) {
+  if (rr && rr.changes.length && !allReady) {
     const key = `${rr.atMs}:${rr.canUndo}`;
     if (!card || card.dataset.key !== key) {
       const fresh = !card || card.dataset.at !== String(rr.atMs);
@@ -471,7 +472,8 @@ function footer(dep: Dep, late: string[]) {
   } else {
     card?.remove();
     msg.hidden = false;
-    setText($('msgText'), late.length ? late.join(' ') : bridge ? 'Say "Alexa, I\'m done" when you finish a step.' : 'Tell Alexa when you finish a step.');
+    if (allReady) accent($('msgText'), 'Everyone is ', 'ready', `. Leave at ${hhmm(dep.gateMs)}.`);
+    else setText($('msgText'), late.length ? late.join(' ') : bridge ? 'Say "Alexa, I\'m done" when you finish a step.' : 'Tell Alexa when you finish a step.');
   }
   const liveText = late.join(' ');
   if (liveText !== lastLive) {

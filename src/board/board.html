@@ -33,7 +33,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 /* the minutes left, as a giant outline behind everything */
-.ghost { position: absolute; right: -30px; top: 40px; z-index: -1; font: 700 940px/.8 var(--cond); letter-spacing: -.03em; color: transparent; -webkit-text-stroke: 2px #f3ede20f; font-variant-numeric: tabular-nums; pointer-events: none; user-select: none; }
+.ghost { position: absolute; right: -24px; top: 150px; z-index: -1; font: 700 720px/.8 var(--cond); letter-spacing: -.03em; color: transparent; -webkit-text-stroke: 2px #f3ede20c; font-variant-numeric: tabular-nums; pointer-events: none; user-select: none; }
 .label { font: 700 21px/1 var(--cond); letter-spacing: .24em; color: var(--dim); display: flex; align-items: center; gap: 14px; }
 .label .n { color: var(--amber); }
 .label .n::after { content: ''; display: inline-block; width: 34px; height: 2px; margin: 0 0 6px 14px; background: currentColor; vertical-align: middle; opacity: .7; }
@@ -62,17 +62,17 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
 .row .then { font: 500 23px/1 var(--body); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .then b { font: 700 17px/1 var(--cond); letter-spacing: .2em; color: var(--faint); margin-right: 10px; }
 .row .ready { font: 700 56px/1 var(--cond); font-variant-numeric: tabular-nums; }
-.row .ready.late { color: var(--late); }
+.row .ready[data-tone='tight'] { color: var(--amber); } .row .ready[data-tone='late'] { color: var(--late); }
 .chance { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 18px; }
 .meter { position: relative; height: 8px; border-radius: 4px; background: #24211d; overflow: hidden; }
 .meter i { position: absolute; inset: 0; transform-origin: 0 50%; background: var(--go); border-radius: 4px; transition: transform .9s var(--ease), background-color .6s; }
 .meter[data-tone='tight'] i { background: var(--amber); } .meter[data-tone='late'] i { background: var(--late); } .meter[data-tone='done'] i { background: var(--faint); }
 /* the 85% line every plan aims for */
 .meter::after { content: ''; position: absolute; top: 0; bottom: 0; left: 85%; width: 2px; background: var(--page); }
-.done { height: 64px; border-radius: 12px; border: 2px solid #3a362f; background: transparent; font: 700 22px/1 var(--cond); letter-spacing: .14em; transition: background-color .2s, border-color .2s, color .2s; }
-.done:hover, .done:focus-visible { border-color: var(--ink); outline: none; }
-.done.arm { background: var(--go); border-color: var(--go); color: #0d0c0a; }
-.done:disabled { opacity: .25; cursor: default; }
+button.done { height: 64px; border-radius: 12px; border: 2px solid #3a362f; background: transparent; font: 700 22px/1 var(--cond); letter-spacing: .14em; transition: background-color .2s, border-color .2s, color .2s; }
+button.done:hover, button.done:focus-visible { border-color: var(--ink); outline: none; }
+button.done.arm { background: var(--go); border-color: var(--go); color: #0d0c0a; }
+button.done:disabled { opacity: .25; cursor: default; }
 
 /* split-flap cells: each character is its own flap */
 .flap { display: inline-flex; gap: 3px; font: 700 42px/1 var(--cond); }
@@ -91,7 +91,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
 .pct .cell { width: 34px; }
 
 /* ---------- runway ---------- */
-.runway { align-self: end; }
+.runway { align-self: end; padding-bottom: 44px; } /* room for the time ticks under the lanes */
 .rw-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; gap: 40px; }
 .learned { font: 500 25px/1.2 var(--body); color: var(--dim); text-align: right; }
 .learned em { font-size: 1.25em; color: var(--ink); }
@@ -119,6 +119,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
 /* ---------- footer ---------- */
 .foot { min-height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 32px; }
 .msg { display: flex; align-items: center; gap: 18px; font: 500 28px/1.25 var(--body); color: var(--dim); }
+.msg em { font-size: 1.3em; color: var(--go); }
 .msg .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--amber); flex: none; animation: breathe 3.2s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: .25; } }
 .side { display: flex; align-items: center; gap: 22px; }
