@@ -7,13 +7,20 @@
 // approximated by one log-normal with the same mean and variance (Fenton-Wilkinson), which gives a
 // closed-form probability of being ready before the gate. Validated against simulation in tests.
 
-/** Standard normal CDF. Abramowitz & Stegun 7.1.26 via erf; absolute error below 1.5e-7. */
-export function phi(z: number): number {
-  const x = Math.abs(z) / Math.SQRT2;
-  const t = 1 / (1 + 0.3275911 * x);
-  const erf = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-  return z >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
+/**
+ * Complementary error function: the Chebyshev fit from Numerical Recipes (6.2), relative error below
+ * 1.2e-7 everywhere. Relative, not absolute: tail probabilities stay accurate, which the remainder of a
+ * step running far over depends on.
+ */
+function erfc(x: number): number {
+  const z = Math.abs(x);
+  const t = 1 / (1 + 0.5 * z);
+  const r = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+  return x >= 0 ? r : 2 - r;
 }
+
+/** Standard normal CDF. */
+export const phi = (z: number) => 0.5 * erfc(-z / Math.SQRT2);
 
 /** Inverse standard normal CDF. Acklam's rational approximation; relative error below 1.2e-9. */
 export function phiInv(p: number): number {
@@ -85,7 +92,7 @@ export function remaining(d: LogNormal, elapsedSec: number, floorSec = 30): Mome
   if (elapsedSec <= 0) return moments(d);
   const z = (Math.log(elapsedSec) - d.mu) / d.sigma;
   const tail = phi(-z);
-  if (tail < 1e-6) return { mean: floorSec, variance: floorSec * floorSec };
+  if (tail < 1e-12) return { mean: floorSec, variance: floorSec * floorSec }; // seven sigma past: nothing left to go on
   const s = d.sigma;
   const e1 = (Math.exp(d.mu + (s * s) / 2) * phi(s - z)) / tail;
   const e2 = (Math.exp(2 * d.mu + 2 * s * s) * phi(2 * s - z)) / tail;

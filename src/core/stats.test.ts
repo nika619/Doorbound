@@ -17,10 +17,15 @@ function normal(r: () => number) {
 const draw = (r: () => number, d: LogNormal) => Math.exp(d.mu + d.sigma * normal(r));
 
 test('normal CDF and its inverse match known values and invert each other', () => {
-  assert.ok(Math.abs(phi(0) - 0.5) < 1e-9);
+  assert.ok(Math.abs(phi(0) - 0.5) < 1e-7);
   assert.ok(Math.abs(phi(1.959964) - 0.975) < 1e-6);
   assert.ok(Math.abs(phi(-1) - 0.158655) < 1e-6);
   for (const p of [1e-6, 0.01, 0.1, 0.5, 0.85, 0.99, 1 - 1e-6]) assert.ok(Math.abs(phi(phiInv(p)) - p) < 2e-7 * Math.max(1, p * 100), `p=${p}`);
+});
+
+test('the normal tail stays accurate far out, where an absolute-error fit would not', () => {
+  // Reference values of Q(z) = 1 - Phi(z), to 6 significant figures.
+  for (const [z, q] of [[3, 1.34990e-3], [5, 2.86652e-7], [7, 1.27981e-12], [9, 1.12859e-19]]) assert.ok(Math.abs(phi(-z) / q - 1) < 1e-5, `z=${z}: ${phi(-z)} vs ${q}`);
 });
 
 test('with no history the median is the stated time and the spread is the prior', () => {
