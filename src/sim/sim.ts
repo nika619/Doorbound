@@ -207,7 +207,7 @@ $<HTMLFormElement>('say').addEventListener('submit', (e) => {
   input.value = '';
   void hear(text, speaker);
 });
-for (const s of ['Start the school run. We leave in 35 minutes.', "I'm done.", "Isha's still in the shower.", 'How are we doing?', 'We need to leave 5 minutes early.', 'Undo that.', 'What have you learned?']) {
+for (const s of ['Start the school run. We leave in 36 minutes.', "I'm done.", "Isha's still in the shower.", 'How are we doing?', 'We need to leave 5 minutes early.', 'Undo that.', 'What have you learned?']) {
   const b = el('button', '', $('tries'), s);
   b.type = 'button';
   b.addEventListener('click', () => void hear(s, speaker));
@@ -236,7 +236,7 @@ else {
 
 // ---------- the demo morning: the design-frame story, on the server's clock ----------
 const DEMO: [number, string | null, string][] = [
-  [0, 'Mum', 'Alexa, start the school run. We leave in 35 minutes.'],
+  [0, 'Mum', 'Alexa, start the school run. We leave in 36 minutes.'],
   [8.1, 'Dad', "I'm done with the lunches."],
   [12.1, 'Aarav', "I'm done with breakfast."],
   [14.5, 'Mum', "Alexa, Isha's still in the shower. Eight more minutes, she says."],
