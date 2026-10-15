@@ -1,22 +1,52 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GRACE_MS, laneTimeline, markDone, project, setGate, startDeparture, stillGoing, undoReroute } from './departure.ts';
-import { household, learnedHistory } from './fixtures.ts';
+import { currentIndex, everyoneOnTime, GRACE_MS, laneTimeline, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute } from './departure.ts';
+import { draw, household, learnedHistory, rng } from './fixtures.ts';
 import { reroute } from './reroute.ts';
+import { moments, posterior, quantile } from './stats.ts';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 9, 15, 1, 42); // 7:12 in India; any fixed instant will do
 const at = (min: number) => T0 + min * MIN;
+const near = (a: number, b: number, tol = 1) => Math.abs(a - b) <= tol;
 
-test('a departure plans with learned times, not stated ones', () => {
-  const dep = startDeparture(household, learnedHistory(), 'School run', at(28), at(0));
-  const isha = dep.lanes.find((l) => l.personId === 'isha')!;
-  assert.equal(isha.tasks[0].sec, 14 * 60, 'shower is planned at 14 minutes, not the 8 she said');
-  const [aarav, ishaView, dad] = project(dep, at(0));
-  assert.equal(aarav.readyMs, at(21));
-  assert.equal(ishaView.readyMs, at(27));
-  assert.equal(ishaView.status, 'ontime');
-  assert.equal(dad.readyMs, at(21));
+test('a departure plans with learned times, not stated ones, and says how sure it is', () => {
+  const dep = startDeparture(household, learnedHistory(), 'School run', at(35), at(0));
+  const shower = dep.lanes[1].tasks[0];
+  assert.ok(Math.exp(shower.mu) > 11 * 60 && Math.exp(shower.mu) < 14 * 60, 'a typical shower is planned near the 14 minutes it takes, not the 8 she said');
+  const [aarav, isha, dad] = project(dep, at(0));
+  for (const v of [aarav, isha, dad]) {
+    assert.ok(v.earlyMs < v.expectedMs && v.expectedMs < v.readyMs && v.readyMs < v.lateMs, `${v.personId}: p10 < mean < p85 < p90`);
+    assert.equal(v.status, 'ontime');
+    assert.ok(v.pOnTime >= TARGET);
+  }
+  assert.ok(isha.pOnTime < aarav.pOnTime, 'Isha is the tightest');
+  assert.ok(near(everyoneOnTime([aarav, isha, dad]), aarav.pOnTime * isha.pOnTime * dad.pOnTime, 1e-12));
+});
+
+test('the chance of making the gate is right, mid-morning and mid-step (Monte Carlo, 100k mornings)', () => {
+  const h = learnedHistory();
+  let dep = startDeparture(household, h, 'School run', at(30), at(0));
+  dep = markDone(dep, 'aarav', at(9))!.dep;
+  const now = at(12); // Isha 12 minutes into her shower, Aarav 3 minutes into his teeth
+  const views = project(dep, now);
+  const r = rng(3);
+  for (const li of [0, 1]) {
+    const lane = dep.lanes[li];
+    const idx = currentIndex(lane);
+    const startMs = li === 0 ? at(9) : at(0);
+    let hit = 0;
+    let n = 0;
+    while (n < 100_000) {
+      const cur = draw(r, lane.tasks[idx]);
+      if (startMs + cur * 1000 <= now) continue; // that morning, the step would already be over: not this morning
+      n++;
+      let end = startMs + cur * 1000;
+      for (let i = idx + 1; i < lane.tasks.length; i++) end += draw(r, lane.tasks[i]) * 1000;
+      if (end <= dep.gateMs) hit++;
+    }
+    assert.ok(Math.abs(views[li].pOnTime - hit / n) < 0.02, `${lane.personId}: analytic ${views[li].pOnTime.toFixed(3)} vs simulated ${(hit / n).toFixed(3)}`);
+  }
 });
 
 test('marking a step done moves the lane on and returns a fair sample to learn from', () => {
@@ -29,19 +59,28 @@ test('marking a step done moves the lane on and returns a fair sample to learn f
   assert.ok(r.dep.rev > dep.rev);
 });
 
-test('an overrunning step is assumed to need at least the grace period, so ready time drifts honestly', () => {
+test('with no news, the expected ready time only ever moves later, and never by less than the grace period', () => {
   const dep = startDeparture(household, new Map(), 'School run', at(28), at(0));
-  const view = project(dep, at(20))[1]; // Isha's 8-minute shower, 12 minutes in, nobody said anything
-  assert.equal(view.readyMs, at(20) + GRACE_MS + (360 + 240 + 180) * 1000);
+  let last = 0;
+  for (let m = 0; m <= 60; m += 0.5) {
+    const v = project(dep, at(m))[1]; // Isha's 8-minute shower, nobody saying anything for an hour
+    assert.ok(v.expectedMs >= last, `minute ${m}`);
+    assert.ok(v.expectedMs >= at(m) + GRACE_MS + (moments(dep.lanes[1].tasks[1]).mean + moments(dep.lanes[1].tasks[2]).mean + moments(dep.lanes[1].tasks[3]).mean) * 1000 - 1);
+    last = v.expectedMs;
+  }
 });
 
-test('"still going" re-plans the current step from now', () => {
-  const dep = startDeparture(household, learnedHistory(), 'School run', at(28), at(0));
-  const late = stillGoing(dep, 'isha', 300, at(14))!;
-  const view = project(late, at(14))[1];
-  assert.equal(view.readyMs, at(32), 'shower now ends at 14 + 5 minutes, so Isha is ready at 7:44');
-  assert.equal(view.status, 'late');
-  assert.equal(view.slackSec, -240);
+test('"still going" replaces the model for the current step with what was said, from now', () => {
+  const dep = startDeparture(household, learnedHistory(), 'School run', at(35), at(0));
+  const before = project(dep, at(14.5))[1];
+  const late = stillGoing(dep, 'isha', 480, at(14.5))!;
+  const v = project(late, at(14.5))[1];
+  const rest = late.lanes[1].tasks.slice(1).reduce((a, t) => a + moments(t).mean, 0);
+  assert.ok(near(v.expectedMs, at(14.5) + (moments(late.lanes[1].tasks[0].extend!).mean + rest) * 1000));
+  assert.ok(near(Math.exp(late.lanes[1].tasks[0].extend!.mu), 480, 1e-9), 'the median is what was said');
+  assert.ok(v.pOnTime < before.pOnTime);
+  assert.equal(v.status, 'late');
+  assert.ok(v.slackSec < 0);
 });
 
 test('the last step shows as boarding, and an empty lane as ready', () => {
@@ -52,6 +91,7 @@ test('the last step shows as boarding, and an empty lane as ready', () => {
   const v = project(dep, at(17))[0];
   assert.equal(v.status, 'ready');
   assert.equal(v.readyMs, at(17));
+  assert.equal(v.pOnTime, 1);
   assert.equal(markDone(dep, 'aarav', at(18)), null, 'nothing left to finish');
 });
 
@@ -61,15 +101,17 @@ test('unknown people are refused rather than guessed', () => {
   assert.equal(stillGoing(dep, 'nobody', 60, at(1)), null);
 });
 
-test('moving the gate changes everyone\'s slack', () => {
-  const dep = setGate(startDeparture(household, learnedHistory(), 'School run', at(28), at(0)), at(25));
-  assert.equal(project(dep, at(0))[1].status, 'late');
+test("moving the gate changes everyone's chances", () => {
+  const dep = startDeparture(household, learnedHistory(), 'School run', at(35), at(0));
+  const earlier = setGate(dep, at(25));
+  assert.equal(project(earlier, at(0))[1].status, 'late', 'Isha cannot make a gate earlier than her expected ready time');
+  assert.ok(project(earlier, at(0)).every((v, i) => v.pOnTime <= project(dep, at(0))[i].pOnTime));
 });
 
 test('undo restores the plan before the re-route, but only while nothing has happened since', () => {
   const h = learnedHistory();
-  const late = stillGoing(startDeparture(household, h, 'School run', at(28), at(0)), 'isha', 300, at(14))!;
-  const fixed = reroute(late, household, h, at(14));
+  const late = stillGoing(startDeparture(household, h, 'School run', at(35), at(0)), 'isha', 480, at(14.5))!;
+  const fixed = reroute(late, household, h, at(14.5));
   assert.ok(fixed.reroute);
   const undone = undoReroute(fixed)!;
   assert.deepEqual(undone.lanes, late.lanes);
@@ -84,14 +126,22 @@ test('the runway puts done steps where they really were, the rest after the curr
   const dad = { ...dep.lanes[2], tasks: dep.lanes[2].tasks.map((t) => (t.stepId === 'dishwasher' ? { ...t, state: 'later' as const } : t)) };
   const blocks = laneTimeline(dad, at(28), at(10));
   assert.deepEqual(
-    blocks.map((b) => [b.key, b.state, (b.startMs - at(0)) / MIN, (b.endMs - at(0)) / MIN]).sort((a, b) => (a[2] as number) - (b[2] as number)),
+    blocks.map((b) => [b.key, b.state]),
     [
-      ['dad/lunches', 'done', 0, 9],
-      ['dad/car', 'current', 9, 12],
-      ['dad/dishwasher', 'later', 28, 38],
+      ['dad/lunches', 'done'],
+      ['dad/dishwasher', 'later'],
+      ['dad/car', 'current'],
     ],
   );
-  const car = laneTimeline(dad, at(28), at(15)).find((b) => b.key === 'dad/car')!;
-  assert.equal(car.overrun, true, 'the car, planned to 7:24, is overrunning at 7:27');
-  assert.equal(car.endMs, at(15) + GRACE_MS);
+  const [lunches, dishwasher, car] = blocks;
+  assert.deepEqual([lunches.startMs, lunches.endMs], [at(0), at(9)]);
+  assert.equal(car.startMs, at(9));
+  assert.ok(car.endMs > at(10), 'the car is expected to end after now');
+  assert.equal(dishwasher.startMs, at(28));
+  assert.ok(near(dishwasher.endMs - dishwasher.startMs, moments(posterior(600)).mean * 1000));
+  assert.equal(car.overrun, false);
+  const planned = at(9) + quantile(posterior(180), TARGET) * 1000; // 7:25:18, at 85%
+  const later = laneTimeline(dad, at(28), planned + MIN).find((b) => b.key === 'dad/car')!;
+  assert.equal(later.overrun, true, 'past its 85% time, the car is overrunning');
+  assert.ok(later.endMs >= planned + MIN + GRACE_MS);
 });
