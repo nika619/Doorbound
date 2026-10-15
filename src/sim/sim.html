@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Departures · Alexa+ simulator</title>
+<link rel="icon" href="data:," />
+<style>
+/*FONTS*/
+:root {
+  --page: #101113; --panel: #17181b; --line: #26282d; --ink: #f2efe8; --dim: #92959c; --faint: #5d6068;
+  --amber: #ffb547; --alexa: #31c6f4; --go: #7fd8a4; --late: #ff6b4a;
+  --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--page); color: var(--ink); font: 500 16px/1.4 var(--body); -webkit-font-smoothing: antialiased; display: grid; grid-template-rows: auto 1fr auto; min-height: 100vh; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--alexa); outline-offset: 2px; }
+
+.top { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 12px; font: 700 18px/1 var(--cond); letter-spacing: .2em; }
+.brand svg { width: 26px; height: 26px; fill: var(--amber); }
+.brand span { color: var(--dim); font-weight: 700; }
+.badges { display: flex; gap: 10px; }
+.badge { font: 700 13px/1 var(--cond); letter-spacing: .16em; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); }
+.badge.on { color: var(--amber); border-color: #4a3a1c; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; padding: 28px; min-height: 0; }
+.stage { display: grid; place-items: center; min-width: 0; }
+/* Echo Show 15 sized: a 16:9 screen in a slim black frame */
+.device { position: relative; width: min(100%, calc((100vh - 230px) * 16 / 9)); aspect-ratio: 16 / 9; border-radius: 22px; padding: 1.4%; background: linear-gradient(#1b1c1f, #0c0d0e); box-shadow: 0 0 0 1px #2a2c30, 0 40px 90px #0009, inset 0 1px 0 #ffffff14; }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 10px; overflow: hidden; background: #050506; }
+.home { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: 1.5vw; padding: 6%; background: radial-gradient(90% 120% at 15% 10%, #1d2430, #07080a 70%); transition: opacity .6s var(--ease); }
+.home .t { font: 700 clamp(48px, 9vw, 150px)/.85 var(--cond); font-variant-numeric: tabular-nums; }
+.home .d { font: 500 clamp(14px, 1.6vw, 26px)/1.2 var(--body); color: var(--dim); }
+.home .hint { margin-top: 1vw; font: 500 clamp(14px, 1.5vw, 24px)/1.3 var(--body); color: var(--ink); }
+.home .hint b { color: var(--alexa); font-weight: 500; }
+.home.gone { opacity: 0; pointer-events: none; }
+.view { position: absolute; border: 0; background: transparent; transition: all .55s var(--ease); }
+.view.fullscreen { inset: 0; width: 100%; height: 100%; border-radius: 0; }
+.view.inline { left: 50%; bottom: 7%; width: min(560px, 62%); height: 46%; transform: translateX(-50%); border-radius: 14px; box-shadow: 0 20px 60px #000c; }
+.reply { position: absolute; left: 6%; right: 6%; bottom: 57%; font: 500 clamp(14px, 1.7vw, 28px)/1.3 var(--body); text-align: center; opacity: 0; transition: opacity .4s; text-shadow: 0 2px 20px #000; }
+.reply.show { opacity: 1; }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, transparent, var(--alexa), transparent); opacity: 0; transition: opacity .3s; }
+.bar.on { opacity: 1; animation: listen 1.2s ease-in-out infinite; }
+@keyframes listen { 50% { transform: scaleX(.6); } }
+
+.side { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 16px; min-height: 0; }
+.k { font: 700 13px/1 var(--cond); letter-spacing: .2em; color: var(--dim); }
+.who { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.who button { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); font: 700 15px/1 var(--cond); letter-spacing: .12em; }
+.who button[aria-pressed='true'] { border-color: var(--alexa); color: var(--alexa); }
+.log { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 4px 4px 0; min-height: 120px; scrollbar-width: thin; }
+.msg { max-width: 92%; padding: 12px 14px; border-radius: 12px; line-height: 1.35; animation: pop .35s var(--ease) both; }
+.msg.you { align-self: flex-end; background: #22252b; }
+.msg.alexa { align-self: flex-start; background: #0f2530; border: 1px solid #164257; }
+.msg.err { border-color: #5a2a22; background: #2a1714; }
+.msg .w { display: block; font: 700 12px/1 var(--cond); letter-spacing: .18em; color: var(--dim); margin-bottom: 6px; }
+.msg.alexa .w { color: var(--alexa); }
+@keyframes pop { from { opacity: 0; transform: translateY(8px); } }
+.say { display: grid; grid-template-columns: auto 1fr; gap: 10px; }
+.mic { width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); display: grid; place-items: center; }
+.mic svg { width: 22px; height: 22px; fill: var(--ink); }
+.mic.on { background: var(--alexa); border-color: var(--alexa); }
+.mic.on svg { fill: #04141b; }
+.say input { min-width: 0; height: 52px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 0 16px; font: 500 16px var(--body); }
+.say input::placeholder { color: var(--faint); }
+.tries { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.tries button { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--dim); font-size: 14px; }
+.tries button:hover { color: var(--ink); border-color: var(--faint); }
+.play { min-height: 52px; border-radius: 12px; border: 1px solid #4a3a1c; background: #1f1910; color: var(--amber); font: 700 16px/1 var(--cond); letter-spacing: .16em; }
+.play[disabled] { opacity: .5; cursor: default; }
+
+.inspector { border-top: 1px solid var(--line); }
+.inspector summary { padding: 12px 28px; cursor: pointer; list-style: none; display: flex; gap: 12px; align-items: center; }
+.inspector summary::-webkit-details-marker { display: none; }
+.inspector pre { max-height: 180px; overflow: auto; padding: 0 28px 16px; font: 12px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: var(--dim); white-space: pre-wrap; }
+.inspector pre .out { color: var(--alexa); } .inspector pre .in { color: var(--go); } .inspector pre .err { color: var(--late); }
+.note { font-size: 13px; color: var(--faint); }
+
+@media (max-width: 1100px) { .main { grid-template-columns: 1fr; } .device { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .view, .home, .msg, .bar.on { transition: none; animation: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES <span>· ALEXA+ SIMULATOR</span></div>
+  <div class="badges"><span class="badge" id="proto">CONNECTING</span><span class="badge" id="clockRate" hidden></span></div>
+</header>
+<div class="main">
+  <section class="stage" aria-label="Simulated Echo Show 15">
+    <div class="device"><div class="screen" id="screen">
+      <div class="home" id="home"><div class="t" id="homeTime">7:12</div><div class="d" id="homeDate"></div><div class="hint">Try <b>"Alexa, start the school run. We leave in 28 minutes."</b></div></div>
+      <div class="reply" id="reply" aria-hidden="true"></div>
+      <div class="bar" id="bar"></div>
+    </div></div>
+  </section>
+  <aside class="side">
+    <div><div class="k">WHO IS SPEAKING</div><div class="who" id="who" role="group" aria-label="Who is speaking"></div></div>
+    <p class="note">Alexa+ recognises voices. Here, pick the speaker so "I'm done" knows who you are.</p>
+    <div class="log" id="log" aria-live="polite" aria-label="Conversation"></div>
+    <div>
+      <form class="say" id="say"><button class="mic" id="mic" type="button" aria-label="Hold to talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg></button><input id="text" autocomplete="off" placeholder="Type what you would say to Alexa" aria-label="What you say" /></form>
+      <div class="tries" id="tries"></div>
+    </div>
+    <button class="play" id="play" type="button">PLAY THE DEMO MORNING</button>
+  </aside>
+</div>
+<details class="inspector"><summary><span class="k">PROTOCOL INSPECTOR</span><span class="note" id="inspSummary">MCP over Streamable HTTP</span></summary><pre id="insp"></pre></details>
+<script>/*SCRIPT*/</script>
+</body>
+</html>
