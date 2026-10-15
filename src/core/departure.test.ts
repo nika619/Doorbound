@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GRACE_MS, markDone, project, setGate, startDeparture, stillGoing, undoReroute, type Household } from './departure.ts';
+import { GRACE_MS, laneTimeline, markDone, project, setGate, startDeparture, stillGoing, undoReroute } from './departure.ts';
 import { household, learnedHistory } from './fixtures.ts';
 import { reroute } from './reroute.ts';
 
@@ -76,4 +76,22 @@ test('undo restores the plan before the re-route, but only while nothing has hap
   assert.equal(undone.reroute, null);
   const moved = markDone(fixed, 'aarav', at(15))!.dep;
   assert.equal(undoReroute(moved), null, 'undo after a real event would lose that event, so it is refused');
+});
+
+test('the runway puts done steps where they really were, the rest after the current one, and waiting steps after the gate', () => {
+  let dep = startDeparture(household, new Map(), 'School run', at(28), at(0));
+  dep = markDone(dep, 'dad', at(9))!.dep; // lunches took 9, not 8
+  const dad = { ...dep.lanes[2], tasks: dep.lanes[2].tasks.map((t) => (t.stepId === 'dishwasher' ? { ...t, state: 'later' as const } : t)) };
+  const blocks = laneTimeline(dad, at(28), at(10));
+  assert.deepEqual(
+    blocks.map((b) => [b.key, b.state, (b.startMs - at(0)) / MIN, (b.endMs - at(0)) / MIN]).sort((a, b) => (a[2] as number) - (b[2] as number)),
+    [
+      ['dad/lunches', 'done', 0, 9],
+      ['dad/car', 'current', 9, 12],
+      ['dad/dishwasher', 'later', 28, 38],
+    ],
+  );
+  const car = laneTimeline(dad, at(28), at(15)).find((b) => b.key === 'dad/car')!;
+  assert.equal(car.overrun, true, 'the car, planned to 7:24, is overrunning at 7:27');
+  assert.equal(car.endMs, at(15) + GRACE_MS);
 });

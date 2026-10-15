@@ -227,3 +227,50 @@ export function applyChanges(dep: Departure, household: Household, history: Hist
   }
   return lanes;
 }
+
+// ---------- the runway ----------
+
+export interface Block {
+  key: string;
+  name: string;
+  forPerson: string;
+  startMs: number;
+  endMs: number;
+  state: 'done' | 'current' | 'todo' | 'later';
+  quick?: boolean;
+  /** The step in progress has run past its planned time. */
+  overrun?: boolean;
+}
+
+/**
+ * Each task as a span of time, for drawing a lane: done steps where they really were, the current
+ * one growing if it overruns, the rest queued after it, and steps that wait queued after the gate.
+ * Skipped steps are left out. O(t) for t tasks.
+ */
+export function laneTimeline(lane: Lane, gateMs: number, nowMs: number): Block[] {
+  const out: Block[] = [];
+  const idx = currentIndex(lane);
+  let cursor = lane.startedAtMs;
+  let after = gateMs;
+  lane.tasks.forEach((t, i) => {
+    const base = { key: t.key, name: t.name, forPerson: t.forPerson, quick: t.quick };
+    if (t.state === 'done') {
+      const startMs = Math.max(cursor, t.notBeforeMs ?? cursor);
+      out.push({ ...base, startMs, endMs: Math.max(startMs, t.doneAtMs!), state: 'done' });
+      cursor = Math.max(cursor, t.doneAtMs!);
+    } else if (t.state === 'todo' && i === idx) {
+      const startMs = currentStartMs(lane, idx);
+      const planned = startMs + t.sec * 1000;
+      const endMs = Math.max(planned, nowMs + GRACE_MS);
+      out.push({ ...base, startMs, endMs, state: 'current', overrun: nowMs > planned });
+      cursor = endMs;
+    } else if (t.state === 'todo') {
+      out.push({ ...base, startMs: cursor, endMs: cursor + t.sec * 1000, state: 'todo' });
+      cursor += t.sec * 1000;
+    } else if (t.state === 'later') {
+      out.push({ ...base, startMs: after, endMs: after + t.sec * 1000, state: 'later' });
+      after += t.sec * 1000;
+    }
+  });
+  return out;
+}
