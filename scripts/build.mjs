@@ -7,11 +7,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
 
-const font = (family, weight, file) =>
-  `@font-face{font-family:'${family}';font-weight:${weight};font-style:normal;font-display:block;src:url(data:font/woff2;base64,${readFileSync(file).toString('base64')}) format('woff2')}`;
+const font = (family, weight, file, style = 'normal') =>
+  `@font-face{font-family:'${family}';font-weight:${weight};font-style:${style};font-display:block;src:url(data:font/woff2;base64,${readFileSync(file).toString('base64')}) format('woff2')}`;
+// All three are under the SIL Open Font License (via @fontsource).
 const FONTS = [
   font('Barlow Condensed', 700, 'node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff2'),
   font('Barlow', 500, 'node_modules/@fontsource/barlow/files/barlow-latin-500-normal.woff2'),
+  font('Instrument Serif', 400, 'node_modules/@fontsource/instrument-serif/files/instrument-serif-latin-400-italic.woff2', 'italic'),
 ].join('');
 
 const sha = (text) => createHash('sha256').update(text, 'utf8').digest('base64');
