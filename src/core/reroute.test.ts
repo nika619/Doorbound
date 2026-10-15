@@ -79,6 +79,7 @@ test('when nothing allowed is enough, it says how late, and changes nothing it d
   assert.equal(plan.changes.length, 0, "Aarav's steps allow no changes");
   assert.ok(plan.stillLateSec > 0);
   assert.equal(plan.optimal, true, 'and it knows no plan does better');
+  assert.equal(reroute(dep, household, h, at(1)), dep, 'with nothing to change, the departure is left as it is');
 });
 
 test('when nothing is enough, the best effort still gets the latest person closer', () => {

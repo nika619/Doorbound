@@ -253,10 +253,13 @@ export function findReroute(dep: Departure, household: Household, history: Histo
   return { changes: found!.opts.map(toChange), stillLateSec: Math.max(0, Math.ceil(found!.lateMs / 1000)), optimal: !exhausted };
 }
 
-/** Re-plan if anyone is late. Returns the same object when nobody is, so callers can skip work. */
+/**
+ * Re-plan if anyone is late. Returns the same object when there is nothing to change (nobody late, or
+ * nothing allowed helps), so callers can skip work and nobody hears "nothing can be moved" on every event.
+ */
 export function reroute(dep: Departure, household: Household, history: History, nowMs: number): Departure {
   const { changes, stillLateSec } = findReroute(dep, household, history, nowMs);
-  if (changes.length === 0 && stillLateSec === 0) return dep;
+  if (changes.length === 0) return dep;
   const rev = dep.rev + 1;
   // One level of undo: the state just before this re-plan, without its own history, so memory stays O(1).
   return { ...dep, rev, lanes: applyChanges(dep, household, history, changes, nowMs), reroute: { atMs: nowMs, rev, changes, stillLateSec, before: { ...dep, reroute: null } } };
