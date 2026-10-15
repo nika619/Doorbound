@@ -138,7 +138,7 @@ function rowFor(id: string): Row {
   const sr = el('span', 'sr', li);
   const label = el('span', 'name', li);
   label.setAttribute('aria-hidden', 'true');
-  const now = new Flap(16);
+  const now = new Flap(18);
   li.append(now.root);
   const then = el('span', 'then', li);
   then.setAttribute('aria-hidden', 'true');
@@ -391,7 +391,8 @@ function applyMode() {
     bridge?.sizeChanged(innerWidth, $('card').scrollHeight);
   }
 }
-addEventListener('resize', applyMode);
+// Fit whenever the frame changes size, however that happens (window, host resizing the iframe, rotation).
+new ResizeObserver(() => applyMode()).observe(document.documentElement);
 $('open').addEventListener('click', () => void bridge?.requestDisplayMode('fullscreen').then(applyMode));
 
 // ---------- talking to the server ----------
@@ -477,6 +478,7 @@ if (bridge) {
     bridge = null; // framed by something that is not an MCP host: behave like a plain screen
   }
 }
+$('board').classList.toggle('readonly', !bridge);
 applyMode();
 await document.fonts.ready;
 void poll();

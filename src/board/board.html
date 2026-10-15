@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Departures</title>
+<link rel="icon" href="data:," />
 <style>
 /*FONTS*/
 :root {
@@ -31,9 +32,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .gate .v b { color: var(--amber); font-weight: 700; }
 .clock { font: 700 150px/.8 var(--cond); font-variant-numeric: tabular-nums; }
 
-.cols, .row { display: grid; grid-template-columns: 270px 600px 1fr 360px 150px 132px; align-items: center; column-gap: 24px; }
+.cols, .row { display: grid; grid-template-columns: 230px 620px 1fr 350px 150px 132px; align-items: center; column-gap: 24px; }
 .cols { font: 700 21px/1 var(--cond); letter-spacing: .2em; color: var(--dim); padding-bottom: 14px; }
 .cols .r, .row .ready { text-align: right; }
+/* A screen without touch (a TV) has no Done column. */
+.readonly .cols, .readonly .row { grid-template-columns: 230px 620px 1fr 350px 150px; }
 .rows { list-style: none; }
 .row { height: 112px; border-top: 2px solid var(--rule); contain: layout paint; }
 .row .name { font: 700 54px/1 var(--cond); letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -45,8 +48,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .done.arm { background: var(--go); border-color: var(--go); color: #0d0f12; }
 
 /* split-flap cells: each character is its own flap */
-.flap { display: inline-flex; gap: 4px; font: 700 42px/1 var(--cond); }
-.cell { position: relative; width: 33px; height: 56px; background: var(--cell); border-radius: 5px; display: grid; place-items: center; overflow: hidden; perspective: 260px; }
+.flap { display: inline-flex; gap: 3px; font: 700 42px/1 var(--cond); }
+.cell { position: relative; width: 31px; height: 56px; background: var(--cell); border-radius: 5px; display: grid; place-items: center; overflow: hidden; perspective: 260px; }
 .cell.blank { background: var(--cell-blank); }
 .cell::after { content: ''; position: absolute; inset: 50% 0 auto; height: 2px; background: #06070900; box-shadow: 0 0 0 1px #050608; }
 .ch { grid-area: 1 / 1; }
@@ -135,7 +138,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
     </div>
   </header>
   <section id="table" hidden>
-    <div class="cols" aria-hidden="true"><span>TRAVELLER</span><span>NOW</span><span>THEN</span><span>STATUS</span><span class="r">READY</span><span></span></div>
+    <div class="cols" aria-hidden="true"><span>TRAVELLER</span><span>NOW</span><span>THEN</span><span>STATUS</span><span class="r">READY</span></div>
     <ul class="rows" id="rows" aria-label="Who is doing what"></ul>
   </section>
   <section class="runway" id="runway" hidden aria-hidden="true">
