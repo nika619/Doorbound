@@ -41,9 +41,11 @@ if (!(DEMO_SPEED >= 1 && DEMO_SPEED <= 60)) fail('DEMO_SPEED must be between 1 a
 
 // ---------- state ----------
 const store = await Store.open(env.DATA_DIR ?? join(root, 'data'));
-if (env.DEMO_SEED === '1' && !store.household.people.length) {
+if (env.DEMO_SEED === '1') {
+  // Every start is the same morning, so a recorded demo can be replayed. (Playing it teaches the history too.)
   store.household = demoHousehold;
   store.history = learnedHistory();
+  store.departure = null;
   await store.save();
 }
 const audit = new Audit(env.DATA_DIR ?? join(root, 'data'));
