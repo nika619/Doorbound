@@ -310,16 +310,20 @@ export function buildServer(ctx: Ctx): McpServer {
     'change_departure',
     {
       title: 'Change the departure time',
-      description: 'Use when the customer moves the departure, for example "we need to leave ten minutes early". Re-plans against the new time. Returns the board.',
-      inputSchema: z.object({ leaveAt }),
+      description: 'Use when the customer moves the departure, either to a time ("leave at 7:30 instead") or by minutes ("we need to leave ten minutes early" is shiftMinutes -10). Re-plans against the new time. Returns the board.',
+      inputSchema: z.object({
+        leaveAt: leaveAt.optional(),
+        shiftMinutes: z.number().int().min(-120).max(120).optional().describe('Minutes to move the departure: negative is earlier'),
+      }),
       ...out,
       _meta: { ui },
     },
-    async ({ leaveAt: at }) => {
+    async ({ leaveAt: at, shiftMinutes }) => {
       const dep = ctx.store.departure;
       if (!dep) return refuse(NO_DEPARTURE);
-      const gateMs = gateFrom(at, ctx.now());
-      if (gateMs <= ctx.now()) return refuse(`${at} has already passed. Say a later time.`);
+      if (!at === (shiftMinutes === undefined)) return refuse('Say either a new time, or how many minutes earlier or later.');
+      const gateMs = at ? gateFrom(at, ctx.now()) : dep.gateMs + shiftMinutes! * 60_000;
+      if (gateMs <= ctx.now()) return refuse(`${clock(gateMs)} has already passed. Say a later time.`);
       const rerouted = commit(ctx, 'change_departure', setGate(dep, gateMs));
       return say(ctx, `Departure moved to ${clock(gateMs)}. ${summary(ctx, ctx.store.departure!, rerouted)}`);
     },
