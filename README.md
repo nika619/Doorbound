@@ -27,6 +27,8 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 
 ![Before the news: the board has already noticed Isha's shower running long and marks her TIGHT](docs/board-tight.jpg)
 
+![Alexa's inline card inside the conversation: each person's chance at a glance](docs/card.jpg)
+
 ## The maths, in plain words
 
 Everything the board and Alexa say comes from one model, in `src/core/stats.ts` and `src/core/departure.ts`.
