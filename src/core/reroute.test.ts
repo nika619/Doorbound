@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyChanges, currentIndex, everyoneOnTime, markDone, project, startDeparture, stillGoing, TARGET, type Change, type Departure, type Household, type PersonDef } from './departure.ts';
-import { record, type History } from './learn.ts';
+import { applyChanges, currentIndex, everyoneOnTime, markDone, project, startDeparture, stillGoing, TARGET, type Change, type Departure, type Household } from './departure.ts';
+import type { History } from './learn.ts';
 import { COST, findReroute, NODE_BUDGET, reroute } from './reroute.ts';
-import { household, learnedHistory, rng } from './fixtures.ts';
+import { household, householdAtLimits, learnedHistory, randomHousehold, randomMorning, rng } from './fixtures.ts';
 import { moments, posterior } from './stats.ts';
 
 const MIN = 60_000;
@@ -100,42 +100,6 @@ test('nobody late, nothing changes: the same object comes back', () => {
 });
 
 // ---------- random households ----------
-
-function randomHousehold(r: () => number, maxPeople: number, maxSteps: number, flex = 1): Household {
-  const n = 1 + Math.floor(r() * maxPeople);
-  const ids = Array.from({ length: n }, (_, i) => `p${i}`);
-  const people: PersonDef[] = ids.map((id) => ({
-    id,
-    name: id,
-    steps: Array.from({ length: 1 + Math.floor(r() * maxSteps) }, (_, j) => {
-      const statedSec = 60 * (1 + Math.floor(r() * 15));
-      return {
-        id: `s${j}`,
-        name: `step ${j}`,
-        statedSec,
-        quick: r() < 0.3 * flex ? { name: `quick ${j}`, sec: Math.max(30, Math.floor(statedSec * (0.2 + r() * 0.6))) } : undefined,
-        canWait: r() < 0.25 * flex,
-        optional: r() < 0.15 * flex,
-        helpers: r() < 0.4 * flex ? ids.filter((o) => o !== id && r() < 0.6) : undefined,
-      };
-    }),
-  }));
-  return { people };
-}
-
-/** A random morning in progress: some steps done, some running over. */
-function randomMorning(r: () => number, hh: Household) {
-  const h: History = new Map();
-  for (const p of hh.people) for (const s of p.steps) if (r() < 0.5) for (let k = 0; k < 4; k++) record(h, p.id, s.id, s.statedSec * (0.6 + r() * 1.4));
-  let dep = startDeparture(hh, h, 'run', at(Math.floor(r() * 50)), at(0));
-  let now = at(0);
-  for (let e = 0; e < 6; e++) {
-    now += Math.floor(r() * 6) * MIN;
-    const who = hh.people[Math.floor(r() * hh.people.length)].id;
-    dep = (r() < 0.5 ? markDone(dep, who, now)?.dep : stillGoing(dep, who, 60 * Math.floor(1 + r() * 10), now)) ?? dep;
-  }
-  return { h, dep, now };
-}
 
 /** Every change the household allows, step by step, enumerated independently of the planner. */
 function allowed(dep: Departure, hh: Household, h: History): Change[][] {
@@ -243,10 +207,7 @@ test('a household at the limits re-plans within the node budget, in well under a
   const r = rng(99);
   let worst = 0;
   for (let run = 0; run < 30; run++) {
-    // 8 people with 15 steps each, every step with every kind of change allowed: 1,200 candidate changes.
-    const ids = Array.from({ length: 8 }, (_, i) => `p${i}`);
-    const step = (j: number, id: string) => ({ id: `s${j}`, name: `step ${j}`, statedSec: 60 * (1 + Math.floor(r() * 10)), quick: { name: 'quick', sec: 30 }, canWait: true, optional: true, helpers: ids.filter((o) => o !== id) });
-    const hh: Household = { people: ids.map((id) => ({ id, name: id, steps: Array.from({ length: 15 }, (_, j) => step(j, id)) })) };
+    const hh = householdAtLimits(r); // 1,200 candidate changes
     const { h, dep, now } = randomMorning(r, hh);
     const t0 = performance.now();
     const fixed = reroute(dep, hh, h, now);
