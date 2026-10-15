@@ -93,3 +93,25 @@ Environment: Windows 11, Node 24.14, no Amazon devices.
 - **Severity:** Low. Once known, it works well: one endpoint served both revisions in our tests.
 - **Workaround:** Used the 2.x line throughout and tested the 2025-11-25 handshake explicitly.
 - **Suggestion (for the hackathon pages):** Say which SDK line to use for "spec 2025-11-25 or later", since the current SDK defaults to a newer revision.
+
+## 9. MCP Apps: messages sent before the view is ready vanish
+
+- **Date:** 15 Oct 2026
+- **Task:** Switch the board to fullscreen from the host as soon as it opens, the way an Echo Show would after "open the board".
+- **Steps:** In our simulator, created the official host-side `AppBridge`, connected it to the board's frame, then sent a tool result and a `host-context-changed` with `displayMode: fullscreen`.
+- **Expected:** Either the messages are queued until the view finishes `ui/initialize`, or the call fails loudly.
+- **Actual:** The specification says a host must not message the view before `ui/notifications/initialized`, but nothing in the host-side API stopped or warned us: the board simply stayed in its inline card. We noticed it in a screenshot, then found the rule in the specification.
+- **Severity:** Medium. The failure is silent and timing-dependent, so it can pass on a fast machine and fail on a device.
+- **Workaround:** The simulator keeps a `ready` promise that settles on `initialized` and awaits it before every message.
+- **Suggestion:** Have `AppBridge` queue host-to-view messages until the view is initialized, or reject them with a clear error.
+
+## 10. MCP Apps: the view-side SDK is large for a kitchen screen
+
+- **Date:** 15 Oct 2026
+- **Task:** Keep the board small and fast on an Echo Show.
+- **Steps:** Bundled the board with the official view-side `App` class from `@modelcontextprotocol/ext-apps`.
+- **Expected:** A few kilobytes for a handshake, tool calls and display-mode requests.
+- **Actual:** About 455 kB of script in the single-file board.
+- **Severity:** Low.
+- **Workaround:** Wrote a 2 kB view bridge with only the messages the board uses (`src/board/bridge.ts`), and a test that runs it against the official host-side `AppBridge` and a real MCP server, so it cannot drift from the specification unnoticed.
+- **Suggestion:** Ship a minimal view-side entry point (handshake, `tools/call`, display mode, size changes) that tree-shakes to a few kilobytes.
