@@ -8,21 +8,24 @@
 <style>
 /*FONTS*/
 :root {
-  --page: #101113; --panel: #17181b; --line: #26282d; --ink: #f2efe8; --dim: #92959c; --faint: #5d6068;
-  --amber: #ffb547; --alexa: #31c6f4; --go: #7fd8a4; --late: #ff6b4a;
-  --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif;
+  --page: #0c0b0a; --panel: #171512; --line: #28251f; --ink: #f3ede2; --dim: #8f887c; --faint: #5d574e;
+  --amber: #ffb547; --alexa: #31c6f4; --go: #8fdcaa; --late: #ff6b4a;
+  --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif; --serif: 'Instrument Serif', Georgia, serif;
   --ease: cubic-bezier(.2, .8, .2, 1);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
-body { background: var(--page); color: var(--ink); font: 500 16px/1.4 var(--body); -webkit-font-smoothing: antialiased; display: grid; grid-template-rows: auto 1fr auto; min-height: 100vh; }
+body { background: radial-gradient(1100px 650px at 8% -10%, #ffb54714, transparent 70%), var(--page); color: var(--ink); font: 500 16px/1.4 var(--body); -webkit-font-smoothing: antialiased; display: grid; grid-template-rows: auto 1fr auto; min-height: 100vh; }
+/* the same static film grain as the board */
+body::after { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"); }
+em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: 0; }
 button { font: inherit; color: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--alexa); outline-offset: 2px; }
 
-.top { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 12px; font: 700 18px/1 var(--cond); letter-spacing: .2em; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 18px 28px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 12px; font: 700 18px/1 var(--cond); letter-spacing: .2em; white-space: nowrap; }
 .brand svg { width: 26px; height: 26px; fill: var(--amber); }
-.brand span { color: var(--dim); font-weight: 700; }
+.brand em { color: var(--amber); font-size: 1.45em; text-transform: none; margin-left: 4px; }
 .badges { display: flex; gap: 10px; }
 .badge { font: 700 13px/1 var(--cond); letter-spacing: .16em; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); }
 .badge.on { color: var(--amber); border-color: #4a3a1c; }
@@ -48,7 +51,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes listen { 50% { transform: scaleX(.6); } }
 
 .side { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 16px; min-height: 0; }
-.k { font: 700 13px/1 var(--cond); letter-spacing: .2em; color: var(--dim); }
+.k { font: 700 13px/1 var(--cond); letter-spacing: .22em; color: var(--dim); }
+.k .n { color: var(--amber); margin-right: 10px; }
 .who { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .who button { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); font: 700 15px/1 var(--cond); letter-spacing: .12em; }
 .who button[aria-pressed='true'] { border-color: var(--alexa); color: var(--alexa); }
@@ -60,7 +64,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .msg .w { display: block; font: 700 12px/1 var(--cond); letter-spacing: .18em; color: var(--dim); margin-bottom: 6px; }
 .msg.alexa .w { color: var(--alexa); }
 @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
-.say { display: grid; grid-template-columns: auto 1fr; gap: 10px; }
+.say { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 10px; }
 .mic { width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); display: grid; place-items: center; }
 .mic svg { width: 22px; height: 22px; fill: var(--ink); }
 .mic.on { background: var(--alexa); border-color: var(--alexa); }
@@ -86,7 +90,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 </head>
 <body>
 <header class="top">
-  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES <span>· ALEXA+ SIMULATOR</span></div>
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES <em>on Alexa+, simulated</em></div>
   <div class="badges"><span class="badge" id="proto">CONNECTING</span><span class="badge" id="clockRate" hidden></span></div>
 </header>
 <div class="main">
@@ -98,10 +102,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
     </div></div>
   </section>
   <aside class="side">
-    <div><div class="k">WHO IS SPEAKING</div><div class="who" id="who" role="group" aria-label="Who is speaking"></div></div>
+    <div><div class="k"><span class="n">01</span>WHO IS SPEAKING</div><div class="who" id="who" role="group" aria-label="Who is speaking"></div></div>
     <p class="note">Alexa+ recognises voices. Here, pick the speaker so "I'm done" knows who you are.</p>
     <div class="log" id="log" aria-live="polite" aria-label="Conversation"></div>
     <div>
+      <div class="k"><span class="n">02</span>SAY SOMETHING</div>
       <form class="say" id="say"><button class="mic" id="mic" type="button" aria-label="Hold to talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg></button><input id="text" autocomplete="off" placeholder="Type what you would say to Alexa" aria-label="What you say" /></form>
       <div class="tries" id="tries"></div>
     </div>
