@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { markDone, project, startDeparture, type Household } from './departure.ts';
 import { draw, rng } from './fixtures.ts';
-import { addPart, censor, paceOf, PARTS, readings, recordPace, rhoOf, total, type PaceStats } from './pace.ts';
+import { addPart, censor, householdPace, kappaOf, paceOf, PARTS, readings, recordPace, rhoOf, total, type PaceStats } from './pace.ts';
 import { moments, phi, posterior } from './stats.ts';
 
 const MIN = 60_000;
@@ -156,4 +156,113 @@ test('rho is learned from same-morning pairs (300 simulated mornings, true rho 0
   }
   assert.ok(Math.abs(rhoOf(s) - 0.5) < 0.1, `learned ${rhoOf(s)}`);
   assert.equal(rhoOf({ products: 0, pairs: 0 }), 0.3, 'with no mornings yet, the prior');
+});
+
+// ---------- the household's shared pace ----------
+
+test('with kappa 0 the household pace is exactly each person on their own', () => {
+  const r = rng(21);
+  for (let trial = 0; trial < 100; trial++) {
+    const rho = 0.1 + 0.6 * r();
+    const readingsBy = [0, 1, 2].map(() => Array.from({ length: Math.floor(r() * 4) }, () => normal(r)));
+    const running = readingsBy.map(() => (r() < 0.6 ? { d: posterior(300 + 600 * r()), elapsedSec: 60 + 900 * r() } : null));
+    const hp = householdPace(readingsBy, running, rho, 0);
+    readingsBy.forEach((rs, p) => {
+      const lane = { personId: 'x', startedAtMs: 0, tasks: [] };
+      const alone = rs.length ? (() => { const prec = 1 + (rs.length * rho) / (1 - rho); return { z: (Math.sqrt(rho) * rs.reduce((a, b) => a + b, 0)) / (1 - rho) / prec, v: 1 / prec, n: rs.length }; })() : paceOf(lane, rho);
+      const ahead = running[p] ? censor(alone, running[p]!.d, rho, running[p]!.elapsedSec) : alone;
+      assert.ok(Math.abs(hp.before[p].z - alone.z) < 1e-9 && Math.abs(hp.before[p].v - alone.v) < 1e-9);
+      assert.ok(Math.abs(hp.ahead[p].z - ahead.z) < 1e-9 && Math.abs(hp.ahead[p].v - ahead.v) < 1e-9);
+    });
+  }
+});
+
+test("one person's readings and another's running step move both paces by the exact posterior (2-D integration)", () => {
+  const rho = 0.4;
+  const kappa = 0.6;
+  const readingsBy = [[1.2, 0.8], []]; // A has finished two slow steps; B has none yet
+  const run = { d: posterior(480), elapsedSec: 900 }; // and B's 8-minute shower is at 15 minutes
+  const hp = householdPace(readingsBy, [null, run], rho, kappa);
+  const b = Math.sqrt(rho / (1 - rho));
+  const a = (run.d.mu - Math.log(run.elapsedSec)) / (run.d.sigma * Math.sqrt(1 - rho));
+  let w = 0;
+  const m = [0, 0];
+  const s = [0, 0];
+  for (let x = -6; x <= 6; x += 0.01)
+    for (let y = -6; y <= 6; y += 0.01) {
+      // Prior: unit variances, correlation kappa. Likelihood: A's readings, and B still running.
+      const prior = Math.exp(-(x * x - 2 * kappa * x * y + y * y) / (2 * (1 - kappa * kappa)));
+      const like = Math.exp(-readingsBy[0].reduce((acc, r) => acc + (r - Math.sqrt(rho) * x) ** 2, 0) / (2 * (1 - rho))) * phi(a + b * y);
+      const f = prior * like;
+      w += f;
+      m[0] += f * x;
+      m[1] += f * y;
+      s[0] += f * x * x;
+      s[1] += f * y * y;
+    }
+  for (const p of [0, 1]) {
+    const mean = m[p] / w;
+    assert.ok(Math.abs(hp.ahead[p].z - mean) < 2e-3, `person ${p}: ${hp.ahead[p].z} vs ${mean}`);
+    assert.ok(Math.abs(hp.ahead[p].v - (s[p] / w - mean * mean)) < 2e-3, `person ${p} variance`);
+  }
+  assert.ok(hp.ahead[1].z > hp.before[1].z, "B's own long shower is in ahead, not before");
+  assert.ok(hp.before[1].z > 0.3, "A's slow morning already says B's will be slow");
+});
+
+test('kappa is learned from pairs of different people in one morning (300 simulated mornings, true kappa 0.5)', () => {
+  const r = rng(13);
+  const rho = 0.4;
+  const s: PaceStats = { products: 0, pairs: 0 };
+  for (let k = 0; k < 300; k++) {
+    const w = normal(r);
+    const z = [0, 1, 2].map(() => Math.sqrt(0.5) * w + Math.sqrt(0.5) * normal(r));
+    const today: number[][] = [[], [], []];
+    for (let i = 0; i < 5; i++)
+      for (const p of [0, 1, 2]) {
+        const x = Math.sqrt(rho) * z[p] + Math.sqrt(1 - rho) * normal(r);
+        recordPace(s, today[p], x, today.flatMap((t, q) => (q === p ? [] : t)));
+        today[p].push(x);
+      }
+  }
+  assert.ok(Math.abs(kappaOf(s, rho) - 0.5) < 0.1, `learned ${kappaOf(s, rho)}`);
+  assert.equal(kappaOf({ products: 0, pairs: 0 }, rho), 0, 'until a household shows it, no link is assumed');
+});
+
+test('when slow mornings are shared, knowing it gives better chances (12k simulated three-person mornings)', () => {
+  const r = rng(17);
+  const RHO = 0.4;
+  const KAPPA = 0.6;
+  const trio: Household = { people: ['a', 'b', 'c'].map((id) => ({ id, name: id, steps: STATED.slice(0, 4).map((sec, i) => ({ id: `s${i}`, name: `S${i}`, statedSec: sec })) })) };
+  const ds = STATED.slice(0, 4).map((sec) => posterior(sec));
+  const typical = STATED.slice(0, 4).reduce((a, b) => a + b, 0);
+  const score = (kappa: number) => ({ kappa, brier: 0, n: 0, said: 0, hit: 0 });
+  const models = [score(KAPPA), score(0)];
+  for (let k = 0; k < 12_000; k++) {
+    const w = normal(r);
+    const ends = [0, 1, 2].map(() => {
+      const z = Math.sqrt(KAPPA) * w + Math.sqrt(1 - KAPPA) * normal(r);
+      const out: number[] = [];
+      for (const d of ds) out.push((out.at(-1) ?? T0) + Math.exp(d.mu + d.sigma * (Math.sqrt(RHO) * z + Math.sqrt(1 - RHO) * normal(r))) * 1000);
+      return out;
+    });
+    const gateMs = T0 + typical * (0.8 + 0.5 * r()) * 1000;
+    const t = T0 + r() * (gateMs - T0);
+    for (const m of models) {
+      let dep = startDeparture(trio, new Map(), 'run', gateMs, T0, RHO, m.kappa);
+      for (const [p, e] of ends.entries()) for (const x of e) if (x <= t) dep = markDone(dep, ['a', 'b', 'c'][p], x)!.dep;
+      project(dep, t).forEach((v, p) => {
+        if (ends[p].at(-1)! <= t) return;
+        const hit = ends[p].at(-1)! <= gateMs ? 1 : 0;
+        m.brier += (v.pOnTime - hit) ** 2;
+        m.n++;
+        m.said += v.pOnTime;
+        m.hit += hit;
+      });
+    }
+  }
+  const [shared, alone] = models;
+  const msg = `Brier with the household pace ${(shared.brier / shared.n).toFixed(4)} vs without ${(alone.brier / alone.n).toFixed(4)}; mean said ${(shared.said / shared.n).toFixed(3)}, happened ${(shared.hit / shared.n).toFixed(3)}`;
+  console.log(msg);
+  assert.ok(shared.brier < alone.brier, msg);
+  assert.ok(Math.abs(shared.said - shared.hit) / shared.n < 0.01, msg);
 });
