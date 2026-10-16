@@ -1,4 +1,4 @@
-// Departures server: the MCP endpoint for Alexa+, the board for a screen, and (on this machine only) the simulator.
+// Doorbound server: the MCP endpoint for Alexa+, the board for a screen, and (on this machine only) the simulator.
 // Configuration is validated at start; an unsafe combination refuses to start rather than running open.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -21,7 +21,7 @@ const root = existsSync(join(here, 'manifest.json')) ? join(here, '..') : join(h
 // ---------- configuration ----------
 const env = process.env;
 const fail = (msg: string): never => {
-  console.error(`Departures will not start: ${msg}`);
+  console.error(`Doorbound will not start: ${msg}`);
   process.exit(1);
 };
 const csv = (v?: string) => (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -166,7 +166,7 @@ server.keepAliveTimeout = 5_000;
 server.maxHeadersCount = 64;
 server.listen(PORT, HOST, () => {
   const base = `http://${HOST.includes(':') ? `[${HOST}]` : HOST}:${PORT}`;
-  console.log(`Departures: MCP ${base}/mcp · story ${base}/ · board ${base}/board${LOCAL ? ` · simulator ${base}/sim` : ''}${DEMO_SPEED > 1 ? ` · demo clock ×${DEMO_SPEED}` : ''}`);
+  console.log(`Doorbound: MCP ${base}/mcp · story ${base}/ · board ${base}/board${LOCAL ? ` · simulator ${base}/sim` : ''}${DEMO_SPEED > 1 ? ` · demo clock ×${DEMO_SPEED}` : ''}`);
 });
 
 async function shutdown() {

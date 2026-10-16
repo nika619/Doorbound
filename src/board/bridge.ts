@@ -33,7 +33,7 @@ export class Bridge {
 
   constructor(
     private readonly port: Port,
-    private readonly info = { name: 'departures-board', version: '1.0.0' },
+    private readonly info = { name: 'doorbound-board', version: '1.0.0' },
   ) {
     port.listen((m) => this.receive(m));
   }

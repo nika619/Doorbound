@@ -20,7 +20,7 @@ for (const t of tools) assert.ok(t.description && t.outputSchema, `${t.name} has
 assert.deepEqual((tools.find((t) => t.name === 'get_board')!._meta as { ui: { visibility: string[] } }).ui.visibility, ['app']);
 step(`tools/list: ${tools.length} tools, one per thing a household says, each with an output schema; get_board is for the screen only`);
 
-const res = await client.readResource({ uri: 'ui://departures/board.html' });
+const res = await client.readResource({ uri: 'ui://doorbound/board.html' });
 const page = res.contents[0] as { mimeType?: string; text?: string };
 assert.equal(page.mimeType, 'text/html;profile=mcp-app');
 assert.ok(page.text?.includes('<main id="board"'));

@@ -8,7 +8,7 @@ import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/
 import { DEMO_MORNING } from '../core/fixtures.ts';
 import { route } from './router.ts';
 
-const BOARD_URI = 'ui://departures/board.html';
+const BOARD_URI = 'ui://doorbound/board.html';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, text?: string) {
   const e = document.createElement(tag);

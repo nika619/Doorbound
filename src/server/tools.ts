@@ -12,7 +12,7 @@ import { quantile, sum } from '../core/stats.ts';
 import type { Audit } from './audit.ts';
 import { changeSchema, laneSchema, LIMITS, type Store } from './store.ts';
 
-export const BOARD_URI = 'ui://departures/board.html';
+export const BOARD_URI = 'ui://doorbound/board.html';
 
 export interface Ctx {
   store: Store;
@@ -174,11 +174,11 @@ function commit(ctx: Ctx, tool: string, dep: Departure | null, person?: string):
 // ---------- the server ----------
 
 export function buildServer(ctx: Ctx): McpServer {
-  const server = new McpServer({ name: 'departures', version: '1.0.0' });
+  const server = new McpServer({ name: 'doorbound', version: '1.0.0' });
   const ui = { resourceUri: BOARD_URI };
   const out = { outputSchema: boardSchema };
 
-  registerAppResource(server, 'Departures board', BOARD_URI, { description: "The household's departure board: who is doing what, who is on time, and the runway to the gate." }, async () => ({
+  registerAppResource(server, 'Doorbound board', BOARD_URI, { description: "The household's departure board: who is doing what, who is on time, and the runway to the gate." }, async () => ({
     contents: [{ uri: BOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: ctx.boardHtml() }],
   }));
 

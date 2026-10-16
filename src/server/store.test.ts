@@ -8,7 +8,7 @@ import { household, learnedHistory } from '../core/fixtures.ts';
 import { Audit } from './audit.ts';
 import { Store } from './store.ts';
 
-const fresh = () => mkdtemp(join(tmpdir(), 'departures-'));
+const fresh = () => mkdtemp(join(tmpdir(), 'doorbound-'));
 
 test('a household survives a save and a reopen, departure included', async () => {
   const dir = await fresh();
