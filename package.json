@@ -5,6 +5,13 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nika619/Doorbound.git"
+  },
+  "homepage": "https://github.com/nika619/Doorbound#readme",
+  "bugs": "https://github.com/nika619/Doorbound/issues",
+  "keywords": ["alexa", "mcp", "model-context-protocol", "mcp-apps", "streamable-http", "household", "probability", "departure-board"],
   "engines": {
     "node": ">=20"
   },
