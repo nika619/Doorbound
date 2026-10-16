@@ -67,7 +67,7 @@ for (const e of DEMO_MORNING) if (e.at < 14.5) before = demoStep(before, e.act, 
 // The moment of the news, before any re-plan: what the search starts from.
 const overrun = stillGoing(before!, 'isha', 8 * 60, AT)!;
 const ishaAt = (d: Departure) => project(d, AT)[1].pOnTime;
-const startChance = project(demoStep(null, { start: 36 }, T0, learnedHistory())!, T0)[1].pOnTime;
+const startChance = project(demoStep(null, { start: 37 }, T0, learnedHistory())!, T0)[1].pOnTime;
 const plan = findReroute(overrun, household, history, AT);
 const quick = plan.changes.find((c) => c.kind === 'quick')!;
 const hand = plan.changes.find((c) => c.kind === 'handoff')!;
@@ -321,7 +321,7 @@ const problem: Draw = (ctx, w, h, p) => {
     ctx.lineTo(gx, top + lanes.length * lh + 10);
     ctx.stroke();
     ctx.setLineDash([]);
-    label(ctx, late ? 'Gate 7:48 · late' : 'Gate 7:48', gx + 10, top - 16, late ? C.late : C.amber, 14);
+    label(ctx, late ? 'Gate 7:49 · late' : 'Gate 7:49', gx + 10, top - 16, late ? C.late : C.amber, 14);
     ctx.globalAlpha = 1;
   }
 };
@@ -416,7 +416,7 @@ const maths: Draw = (ctx, w, h, p) => {
       ctx.lineTo(gx, box.y + box.h);
       ctx.stroke();
       ctx.setLineDash([]);
-      label(ctx, 'gate 7:48', gx + 10, box.y + 8, C.amber, 13);
+      label(ctx, 'gate 7:49', gx + 10, box.y + 8, C.amber, 13);
       const shown = morningChance * expo(fill);
       big(ctx, `${Math.round(shown * 100)}%`, box.x + box.w, box.y + box.h * 0.42, Math.min(h * 0.2, w * 0.12), C.go, 'right');
       italic(ctx, 'ready in time', box.x + box.w, box.y + box.h * 0.42 + Math.min(46, w * 0.04), Math.min(34, w * 0.03), C.go, 'right');
@@ -437,8 +437,8 @@ const replan: Draw = (ctx, w, h, p) => {
   const riseT = expo(seg(p, 0.72, 0.9));
   const value = riseT > 0 ? mix(pBefore, NODES[2].p, riseT) : mix(startChance, pBefore, fallT);
   const color = value >= 0.85 ? C.go : value >= 0.5 ? C.amber : C.late;
-  ring(ctx, cx, cy, r, value, color, pct(value), 'Isha · 7:48');
-  label(ctx, riseT > 0.5 ? 'after the re-plan' : fallT > 0.5 ? '"eight more minutes"' : 'at the start', cx, cy - r - 28, C.dim, 13, 'center');
+  ring(ctx, cx, cy, r, value, color, pct(value), 'Isha · 7:49');
+  label(ctx, riseT > 0.5 ? 'after the re-plan' : fallT > 0.5 ? '"nine more minutes"' : 'at the start', cx, cy - r - 28, C.dim, 13, 'center');
   // the search tree
   const tx = narrow ? -80 + m : cx + r * 1.6;
   const nodeW = narrow ? w - 2 * m : Math.min(360, w - tx - m - 100);
