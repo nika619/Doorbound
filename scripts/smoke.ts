@@ -15,7 +15,7 @@ assert.equal(client.getNegotiatedProtocolVersion(), '2025-11-25');
 step('initialize negotiates protocol 2025-11-25 over Streamable HTTP');
 
 const { tools } = await client.listTools();
-assert.deepEqual(tools.map((t) => t.name).sort(), ['change_departure', 'departure_status', 'end_departure', 'get_board', 'learned_times', 'set_routine', 'start_departure', 'step_done', 'still_going', 'undo_reroute']);
+assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'end_departure', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'set_routine', 'start_departure', 'step_done', 'still_going', 'undo_reroute']);
 for (const t of tools) assert.ok(t.description && t.outputSchema, `${t.name} has a description and an output schema`);
 assert.deepEqual((tools.find((t) => t.name === 'get_board')!._meta as { ui: { visibility: string[] } }).ui.visibility, ['app']);
 step(`tools/list: ${tools.length} tools, one per thing a household says, each with an output schema; get_board is for the screen only`);
@@ -112,5 +112,36 @@ step('/ serves the story page under the same hash-only CSP');
 assert.equal((await fetch(new URL('/nope', base))).status, 404);
 assert.equal(await (await fetch(new URL('/healthz', base))).text(), 'ok');
 step('unknown paths are 404; /healthz answers');
+
+// ---------- Alexa+ sign-in (OAuth client credentials), when the server is set up for it ----------
+if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
+  const meta = (await (await fetch(new URL('/.well-known/oauth-authorization-server', base))).json()) as { token_endpoint: string; grant_types_supported: string[] };
+  assert.deepEqual(meta.grant_types_supported, ['client_credentials']);
+  const pr = (await (await fetch(new URL('/.well-known/oauth-protected-resource', base))).json()) as { resource: string };
+  const basic = (secret: string) => `Basic ${Buffer.from(`${encodeURIComponent(process.env.OAUTH_CLIENT_ID!)}:${encodeURIComponent(secret)}`).toString('base64')}`;
+  const token = (secret: string) =>
+    fetch(new URL(new URL(meta.token_endpoint).pathname, base), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: basic(secret) },
+      body: new URLSearchParams({ grant_type: 'client_credentials', resource: pr.resource }),
+    });
+  const r = await token(process.env.OAUTH_CLIENT_SECRET);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
+  const { access_token, expires_in } = (await r.json()) as { access_token: string; expires_in: number };
+  assert.ok(expires_in <= 3600);
+  const alexa = new Client({ name: 'alexa-plus', version: '1.0.0' });
+  await alexa.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${access_token}` } } }));
+  assert.ok((await alexa.listTools()).tools.length > 0);
+  await alexa.close();
+  step('OAuth: discovery, client credentials for a one-hour token, MCP calls with it');
+  const wrong = await token('wrong');
+  assert.equal(wrong.status, 401);
+  assert.equal(((await wrong.json()) as { error: string }).error, 'invalid_client');
+  const forged = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${access_token.slice(0, -4)}AAAA` }, body: '{}' });
+  assert.equal(forged.status, 401);
+  assert.match(forged.headers.get('www-authenticate') ?? '', /resource_metadata=/);
+  step('OAuth: a wrong secret is invalid_client; a tampered token is a 401 that points at the metadata');
+}
 
 console.log('\nAll smoke checks passed.');
