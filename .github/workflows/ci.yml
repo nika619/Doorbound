@@ -31,6 +31,9 @@ jobs:
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:3939/healthz && break; sleep 1; done
       - name: End-to-end smoke test over Streamable HTTP
         run: npm run smoke
+      - name: Official MCP conformance suite (the scenarios that apply)
+        if: matrix.node == 24
+        run: node scripts/conformance.mjs
 
   docker:
     name: Container builds, refuses unsafe config, passes the smoke test
