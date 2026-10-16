@@ -33,6 +33,7 @@ test('questions and undo', () => {
   assert.equal(r('how are we doing?')!.tool, 'departure_status');
   assert.equal(r("who's late")!.tool, 'departure_status');
   assert.equal(r('how long does the shower really take')!.tool, 'learned_times');
+  assert.deepEqual(r('We leave at 7:40 tomorrow. When should everyone be up?'), { tool: 'plan_tomorrow', args: { leaveAt: '07:40' } });
   assert.equal(r('undo that')!.tool, 'undo_reroute');
   assert.equal(r("we've left")!.tool, 'end_departure');
 });

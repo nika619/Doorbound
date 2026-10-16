@@ -51,6 +51,12 @@ export function route(utterance: string, people: string[], speaker: string | nul
   if (/how long does|really take|what have you learned|what did you learn/.test(lower)) return { tool: 'learned_times', args: {} };
   if (/how are we doing|who's late|who is late|how long until|are we on time/.test(lower)) return { tool: 'departure_status', args: {} };
 
+  // "we leave at 7:40 tomorrow, when should everyone be up?"
+  if (/\b(tomorrow|get up|be up|wake|alarms?)\b/.test(lower) && /\b(leave|leaving|at)\b/.test(lower)) {
+    const leaveAt = clockOf(lower.replace(/^.*?\b(?:leave|leaving|at)\s+/, ''));
+    return leaveAt ? { tool: 'plan_tomorrow', args: { leaveAt } } : null;
+  }
+
   // "start the school run, we leave at 7:40" / "... we leave in 28 minutes"
   if (/\bstart\b/.test(lower) && /\b(leave|leaving|run)\b/.test(lower)) {
     const name = text.match(/start (?:the )?([a-z ]+?)(?=[,.]|\s+(?:we|and|leaving|leave|at|in)\b|$)/i)?.[1]?.trim();

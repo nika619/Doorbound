@@ -244,7 +244,7 @@ $<HTMLFormElement>('say').addEventListener('submit', (e) => {
   input.value = '';
   void hear(text, speaker);
 });
-for (const s of ['Start the school run. We leave in 37 minutes.', "I'm done.", "Isha's still in the shower.", 'How are we doing?', 'We need to leave 5 minutes early.', 'Undo that.', 'What have you learned?']) {
+for (const s of ['Start the school run. We leave in 37 minutes.', "I'm done.", "Isha's still in the shower.", 'How are we doing?', 'We need to leave 5 minutes early.', 'Undo that.', 'What have you learned?', 'We leave at 7:49 tomorrow. When should everyone be up?']) {
   const b = el('button', '', $('tries'), s);
   b.type = 'button';
   b.addEventListener('click', () => void hear(s, speaker));
