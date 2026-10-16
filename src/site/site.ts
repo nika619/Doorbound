@@ -65,7 +65,7 @@ const AT = T0 + 14.5 * MIN; // "Isha's still in the shower"
 let before: Departure | null = null;
 for (const e of DEMO_MORNING) if (e.at < 14.5) before = demoStep(before, e.act, T0 + e.at * MIN, history);
 // The moment of the news, before any re-plan: what the search starts from.
-const overrun = stillGoing(before!, 'isha', 8 * 60, AT)!;
+const overrun = stillGoing(before!, 'isha', 9 * 60, AT)!;
 const ishaAt = (d: Departure) => project(d, AT)[1].pOnTime;
 const startChance = project(demoStep(null, { start: 37 }, T0, learnedHistory())!, T0)[1].pOnTime;
 const plan = findReroute(overrun, household, history, AT);
@@ -86,7 +86,7 @@ const SAID = isha.steps[0].statedSec;
 const SAMPLES = history.get('isha/shower')!.slice(0, 5);
 const ishaSteps: { name: string; d: LogNormal }[] = isha.steps.map((s) => ({ name: s.name, d: posterior(s.statedSec, history.get(`isha/${s.id}`)) }));
 const morning = sum(ishaSteps.map((s) => moments(s.d)))!;
-const GATE_MIN = 36;
+const GATE_MIN = 37;
 const morningChance = cdf(morning, GATE_MIN * 60);
 
 // ---------- canvas helpers ----------
