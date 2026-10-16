@@ -18,3 +18,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # The image stays on a long-term-support Node line; minor and patch updates still come weekly.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
