@@ -130,7 +130,14 @@ scripts/      build, smoke test, benchmark, one-turn client
 - **The server holds the clock and the state; screens hold nothing.** Every screen derives the board from the same core functions and the server's time, so an Echo Show and a TV agree to the second.
 - **One tool per thing a household says**, each with an output schema, plain speakable text, and error results that say what to say instead (Amazon's add-on design guide).
 - **The board is one self-contained HTML file** (fonts inlined), served with a hash-only Content Security Policy. It builds its DOM once and then changes only what moved: one transform per frame, text once a second.
-- **Fonts:** Barlow, Barlow Condensed and Instrument Serif, all under the SIL Open Font License.
+
+## Design
+
+- **From the object itself.** An airport departure board, read from across a kitchen: amber on warm black, split-flap letters, one row per traveller. A soft spotlight and film grain keep it from looking like a spreadsheet.
+- **Two voices of type.** Bold condensed capitals for the facts, an italic serif for the one word that carries the feeling ("The *school run*", "*Re-routed.*", "takes *12 minutes*"), Barlow for everything else. All three under the SIL Open Font License.
+- **Motion with a job.** Words arrive one by one (blur to sharp, 60 ms apart, expo-out); the household's chance counts up when a re-plan changes it; blocks glide to their new lane; a hairline fills with the time gone. Nothing loops for decoration, and reduced motion turns it all off.
+- **Calm by default.** Sound (a flap clatter, a chime on a re-route) is off until someone switches it on. The minutes left sit behind everything as a faint outline, not a flashing countdown.
+- **Readable by everyone.** Text contrast at least 4.5:1 (3:1 for large labels), measured; real buttons with focus rings and names that say whose step they mark; a screen-reader sentence per row and spoken updates; nothing told by colour alone.
 
 ## Security
 
