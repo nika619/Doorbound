@@ -10,6 +10,20 @@ import { Audit } from './audit.ts';
 import { Store } from './store.ts';
 import { buildServer } from './tools.ts';
 
+test('a departure that crosses midnight is tonight, not this morning', async () => {
+  const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
+  store.household = household;
+  const now = new Date(2026, 9, 15, 23, 40).getTime();
+  const server = buildServer({ store, audit: new Audit(await mkdtemp(join(tmpdir(), 'audit-'))), client: 'test', boardHtml: () => '<html></html>', now: () => now, clockRate: 1 });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  const client = new Client({ name: 'alexa', version: '1' });
+  await client.connect(a);
+  const text = async (leaveAt: string) => ((await client.callTool({ name: 'start_departure', arguments: { leaveAt } })).content as { text: string }[])[0].text;
+  assert.match(await text('00:15'), /Leave at 0:15, in 35 minutes\./);
+  assert.equal(await text('23:30'), '23:30 has already passed today. Say a later time.');
+});
+
 test('the demo morning, as Alexa says it', async () => {
   const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
   store.household = household;

@@ -141,11 +141,20 @@ function findPerson(ctx: Ctx, who: string): PersonDef | undefined {
   return ctx.store.household.people.find((p) => p.name.toLowerCase() === key || p.id === slug(who));
 }
 
-/** Today's (or tomorrow's, if already past) local time HH:MM as epoch ms. */
+/**
+ * The local HH:MM a household means: today's, or tomorrow's when today's has passed and tomorrow's is
+ * within 12 hours (at 23:40, "leave at 00:10" is in half an hour). A time that passed earlier today stays
+ * in the past, so it is refused as passed rather than read as tomorrow.
+ */
 function gateFrom(hhmm: string, nowMs: number): number {
   const [h, m] = hhmm.split(':').map(Number);
   const d = new Date(nowMs);
   d.setHours(h, m, 0, 0);
+  if (d.getTime() <= nowMs) {
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1); // by the calendar, so a clock change does not shift it
+    if (next.getTime() - nowMs <= 12 * 3_600_000) return next.getTime();
+  }
   return d.getTime();
 }
 
@@ -479,7 +488,11 @@ export function buildServer(ctx: Ctx): McpServer {
     async ({ leaveAt: at }) => {
       const now = ctx.now();
       let gateMs = gateFrom(at, now);
-      if (gateMs <= now) gateMs += 86_400_000; // the next time it is that o'clock
+      if (gateMs <= now) {
+        const d = new Date(gateMs);
+        d.setDate(d.getDate() + 1); // the next time it is that o'clock
+        gateMs = d.getTime();
+      }
       const { starts } = planStarts(ctx.store.household, ctx.store.history, gateMs, rhoOf(ctx.store.pace));
       if (!starts.length) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
       const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} by ${clock(s.startMs)}`);
