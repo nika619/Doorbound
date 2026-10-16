@@ -1,5 +1,7 @@
 # Doorbound
 
+*Every morning is a departure.*
+
 **The household's morning, as a live departure board on Alexa+.** Who is doing what, each person's real chance of making the door on time, and a new plan the moment someone slips.
 
 ![The board re-routing live: an amber scan crosses the runway, Isha's bag lifts out of her lane and lands in Dad's, and her chance climbs back](docs/reroute.gif)
