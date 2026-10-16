@@ -19,6 +19,7 @@ test('a departure that crosses midnight is tonight, not this morning', async () 
   await server.connect(b);
   const client = new Client({ name: 'alexa', version: '1' });
   await client.connect(a);
+  await client.listTools(); // so the client checks every reply against its declared output schema, as Alexa+ would
   const text = async (leaveAt: string) => ((await client.callTool({ name: 'start_departure', arguments: { leaveAt } })).content as { text: string }[])[0].text;
   assert.match(await text('00:15'), /Leave at 0:15, in 35 minutes\./);
   assert.equal(await text('23:30'), '23:30 has already passed today. Say a later time.');
@@ -34,6 +35,7 @@ test('the demo morning, as Alexa says it', async () => {
   await server.connect(b);
   const client = new Client({ name: 'alexa', version: '1' });
   await client.connect(a);
+  await client.listTools(); // so the client checks every reply against its declared output schema, as Alexa+ would
   const say = async (minute: number, name: string, args: Record<string, unknown> = {}) => {
     now = new Date(2026, 9, 15, 7, 12).getTime() + minute * 60_000;
     const r = await client.callTool({ name, arguments: args });
