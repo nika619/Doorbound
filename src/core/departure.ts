@@ -91,6 +91,8 @@ export interface Departure {
   reroute: Reroute | null;
   /** How strongly one person's steps run slow or fast together in this household (pace.ts). */
   rho: number;
+  /** Chances given and not yet scored (score.ts). */
+  forecasts?: { personId: string; p: number; atMs: number }[];
 }
 
 /** Plan so each person is ready by the gate with at least this probability. */
@@ -299,7 +301,7 @@ export function stillGoing(dep: Departure, personId: string, extraSec: number, n
 }
 
 export function setGate(dep: Departure, gateMs: number): Departure {
-  return { ...dep, gateMs, rev: dep.rev + 1 };
+  return { ...dep, gateMs, rev: dep.rev + 1, forecasts: [] }; // forecasts were about the old gate
 }
 
 /** Undo the last re-plan, only if nothing has happened since; otherwise undo would lose real events. */

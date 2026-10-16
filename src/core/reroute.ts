@@ -287,6 +287,9 @@ export function reroute(dep: Departure, household: Household, history: History, 
   const { changes, stillLateSec } = findReroute(dep, household, history, nowMs);
   if (changes.length === 0) return dep;
   const rev = dep.rev + 1;
+  // Forecasts for anyone whose plan changed no longer describe what will run (score.ts).
+  const moved = new Set(changes.flatMap((c) => (c.to ? [c.from, c.to] : [c.from])));
+  const forecasts = dep.forecasts?.filter((f) => !moved.has(f.personId));
   // One level of undo: the state just before this re-plan, without its own history, so memory stays O(1).
-  return { ...dep, rev, lanes: applyChanges(dep, household, history, changes, nowMs), reroute: { atMs: nowMs, rev, changes, stillLateSec, before: { ...dep, reroute: null } } };
+  return { ...dep, rev, forecasts, lanes: applyChanges(dep, household, history, changes, nowMs), reroute: { atMs: nowMs, rev, changes, stillLateSec, before: { ...dep, reroute: null } } };
 }
