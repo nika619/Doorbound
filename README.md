@@ -79,9 +79,13 @@ npm install
 npm run demo
 ```
 
-Open http://localhost:3939 for the **Alexa+ simulator**: an Echo Show 15 frame, voice in and out, and a protocol inspector. Press **Play the demo morning** for the scripted morning (about 90 seconds on a 20× demo clock), or talk to it. The demo resets to the same household on every start.
+- http://localhost:3939 is **the story**: a scroll story of the problem, the maths and the re-plan, every curve computed in the page by the same core the server runs, with the live board on a wall-mounted Echo Show.
+- http://localhost:3939/sim is **the Alexa+ simulator**: the Echo Show on the wall, the conversation as subtitles, speaker avatars and a mic, and a drawer with every MCP message. Press **Play the morning** for the scripted morning (about 90 seconds on a 20× demo clock), or talk to it. The demo resets to the same household on every start.
+- http://localhost:3939/board is the board on its own, as a TV would show it.
 
-For a real household, `npm start` (no demo clock, empty household: tell it your routines). The board alone is at http://localhost:3939/board.
+For a real household, `npm start` (no demo clock, empty household: tell it your routines).
+
+![The simulator: the Echo Show on the wall, Alexa's answer as a subtitle, the demo morning's timeline and the dock](docs/simulator.jpg)
 
 ## Connect it
 
