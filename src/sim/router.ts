@@ -52,6 +52,24 @@ export function route(utterance: string, people: string[], speaker: string | nul
   if (/how accurate|how reliable|how honest|can i trust|how right/.test(lower)) return { tool: 'how_accurate', args: {} };
   if (/how are we doing|who's late|who is late|how long until|are we on time/.test(lower)) return { tool: 'departure_status', args: {} };
 
+  // What can bend: "Isha's breakfast can be to go in 2 minutes", "Dad can pack Isha's bag", "the dishwasher can wait", "Aarav can skip reading"
+  const owner = (n: string | undefined) => (n ? people.find((p) => p.toLowerCase() === n) : undefined);
+  const quick = lower.match(new RegExp(String.raw`^(?:(\w+)'s\s+)?(.+?)\s+can be\s+(.+?)\s+in\s+${NUM}\s+minutes?\.?$`));
+  if (quick && !owner(quick[2])) {
+    // (not "Isha can be ready in 5 minutes": that is a person, not a step)
+    const person = owner(quick[1]) ?? who;
+    return person ? { tool: 'allow_change', args: { person, step: tidyStep(quick[2]), quickVersion: { name: tidyStep(`${quick[2]} ${quick[3]}`), minutes: num(quick[4]) } } } : null;
+  }
+  const helps = lower.match(/^(\w+) can (?:\w+ )?(\w+)'s (.+?)\.?$/);
+  if (helps && owner(helps[1]) && owner(helps[2])) return { tool: 'allow_change', args: { person: owner(helps[2])!, step: tidyStep(helps[3]), helper: owner(helps[1])! } };
+  const waits = lower.match(/^(?:(\w+)'s |the |my )?(.+?) can wait\.?$/);
+  if (waits) {
+    const person = owner(waits[1]) ?? speaker;
+    return person ? { tool: 'allow_change', args: { person, step: tidyStep(waits[2]), canWait: true } } : null;
+  }
+  const skips = lower.match(/^(\w+) can skip (?:the |their |his |her )?(.+?)\.?$/);
+  if (skips && owner(skips[1])) return { tool: 'allow_change', args: { person: owner(skips[1])!, step: tidyStep(skips[2]), optional: true } };
+
   // "we leave at 7:40 tomorrow, when should everyone be up?"
   if (/\b(tomorrow|get up|be up|wake|alarms?)\b/.test(lower) && /\b(leave|leaving|at)\b/.test(lower)) {
     const leaveAt = clockOf(lower.replace(/^.*?\b(?:leave|leaving|at)\s+/, ''));

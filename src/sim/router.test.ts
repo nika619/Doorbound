@@ -34,6 +34,10 @@ test('questions and undo', () => {
   assert.equal(r("who's late")!.tool, 'departure_status');
   assert.equal(r('how long does the shower really take')!.tool, 'learned_times');
   assert.equal(r('How accurate have you been?')!.tool, 'how_accurate');
+  assert.deepEqual(r("Isha's breakfast can be to go in 2 minutes."), { tool: 'allow_change', args: { person: 'Isha', step: 'Breakfast', quickVersion: { name: 'Breakfast to go', minutes: 2 } } });
+  assert.deepEqual(r("Dad can pack Isha's bag"), { tool: 'allow_change', args: { person: 'Isha', step: 'Bag', helper: 'Dad' } });
+  assert.deepEqual(r('The dishwasher can wait.', 'Dad'), { tool: 'allow_change', args: { person: 'Dad', step: 'Dishwasher', canWait: true } });
+  assert.deepEqual(r('Aarav can skip reading'), { tool: 'allow_change', args: { person: 'Aarav', step: 'Reading', optional: true } });
   assert.deepEqual(r('We leave at 7:40 tomorrow. When should everyone be up?'), { tool: 'plan_tomorrow', args: { leaveAt: '07:40' } });
   assert.equal(r('undo that')!.tool, 'undo_reroute');
   assert.equal(r("we've left")!.tool, 'end_departure');

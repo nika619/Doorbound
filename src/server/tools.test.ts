@@ -37,6 +37,8 @@ test('the demo morning, as Alexa says it', async () => {
   const status = await say(15, 'departure_status');
   assert.ok(!status.error && status.board!.rev > start.board!.rev);
   assert.match((await say(15, 'how_accurate')).text, /^I've checked (none|only \d) of my chances against what really happened so far\./);
+  assert.equal((await say(15, 'allow_change', { person: 'Aarav', step: 'teeth', optional: true })).text, "Got it: Aarav's brush teeth, it can be skipped. It applies from the next departure.");
+  assert.match((await say(15, 'allow_change', { person: 'Aarav', step: 'piano', canWait: true })).text, /^Aarav has no step called piano\. Their steps are breakfast, brush teeth and shoes and bag\.$/);
   const tomorrow = await say(15, 'plan_tomorrow', { leaveAt: '07:49' });
   assert.match(tomorrow.text, /^To leave at 7:49 with an 85% chance of everyone making it: Isha by \d+:\d\d, \w+ by \d+:\d\d and \w+ by \d+:\d\d\. Shall I set alarms for those times\?$/);
 

@@ -252,6 +252,49 @@ export function buildServer(ctx: Ctx): McpServer {
 
   registerAppTool(
     server,
+    'allow_change',
+    {
+      title: 'Say what can bend on a rushed morning',
+      description:
+        "Use when the customer says how one step can bend when time is short, for example: Isha's breakfast can be to go in 2 minutes; Dad can pack Isha's bag; the dishwasher can wait; Aarav can skip reading. Changes only that step; the re-planner may then use it. Returns the board.",
+      inputSchema: z.object({
+        person: name.describe('Whose step it is'),
+        step: name.describe('The step, as it was named, for example "Breakfast"'),
+        quickVersion: z.object({ name, minutes: z.number().min(0.5).max(120) }).optional().describe('A faster version, for example breakfast to go'),
+        canWait: z.boolean().optional().describe('It can be done after leaving'),
+        optional: z.boolean().optional().describe('It can be skipped'),
+        helper: name.optional().describe('Someone else who may do it instead'),
+      }),
+      ...out,
+      _meta: { ui },
+    },
+    async ({ person, step, quickVersion, canWait, optional, helper }) => {
+      const p = findPerson(ctx, person);
+      if (!p) return noOne(ctx, person);
+      const key = step.trim().toLowerCase();
+      const s = p.steps.find((x) => x.id === slug(step) || x.name.toLowerCase() === key) ?? p.steps.find((x) => x.name.toLowerCase().includes(key) || key.includes(x.name.toLowerCase()));
+      if (!s) return refuse(`${p.name} has no step called ${step}. Their steps are ${list(p.steps.map((x) => x.name.toLowerCase()))}.`);
+      if (quickVersion && quickVersion.minutes * 60 >= s.statedSec) return refuse(`A quicker version has to take less than ${minutes(s.statedSec)}.`);
+      const h = helper === undefined ? undefined : findPerson(ctx, helper);
+      if (helper !== undefined && (!h || h.id === p.id)) return h ? refuse(`${p.name} already does it.`) : noOne(ctx, helper);
+      const next: StepDef = {
+        ...s,
+        ...(quickVersion ? { quick: { name: quickVersion.name, sec: Math.round(quickVersion.minutes * 60) } } : {}),
+        ...(canWait !== undefined ? { canWait: canWait || undefined } : {}),
+        ...(optional !== undefined ? { optional: optional || undefined } : {}),
+        ...(h ? { helpers: [...new Set([...(s.helpers ?? []), h.id])].slice(0, LIMITS.helpers) } : {}),
+      };
+      ctx.store.household = { people: ctx.store.household.people.map((x) => (x.id === p.id ? { ...x, steps: x.steps.map((y) => (y.id === s.id ? next : y)) } : x)) };
+      ctx.store.touch();
+      void ctx.store.save();
+      ctx.audit.record({ tool: 'allow_change', ok: true, person: p.id, client: ctx.client });
+      const said = [quickVersion && `${quickVersion.name.toLowerCase()} in ${minutes(quickVersion.minutes * 60)}`, canWait && 'it can wait until after you leave', optional && 'it can be skipped', h && `${h.name} can do it`].filter(Boolean);
+      return say(ctx, `Got it: ${p.name}'s ${s.name.toLowerCase()}, ${said.length ? list(said as string[]) : 'no change'}. ${ctx.store.departure ? 'It applies from the next departure.' : 'I will only use it when time is short.'}`);
+    },
+  );
+
+  registerAppTool(
+    server,
     'start_departure',
     {
       title: 'Start a departure',
