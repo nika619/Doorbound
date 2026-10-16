@@ -8,112 +8,183 @@
 <style>
 /*FONTS*/
 :root {
-  --page: #0c0b0a; --panel: #171512; --line: #28251f; --ink: #f3ede2; --dim: #8f887c; --faint: #7a7366;
+  --page: #0a0908; --panel: #15130f; --line: #28251f; --ink: #f3ede2; --dim: #8f887c; --faint: #7a7366;
   --amber: #ffb547; --alexa: #31c6f4; --go: #8fdcaa; --late: #ff6b4a;
   --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif; --serif: 'Instrument Serif', Georgia, serif;
   --ease: cubic-bezier(.16, 1, .3, 1); /* expo-out */
+  --nav: 76px; --dock: 176px; --talk: 250px; /* captions and timeline */
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
-body { background: radial-gradient(1100px 650px at 8% -10%, #ffb54714, transparent 70%), var(--page); color: var(--ink); font: 500 16px/1.4 var(--body); -webkit-font-smoothing: antialiased; display: grid; grid-template-rows: auto 1fr auto; min-height: 100vh; }
-/* the same static film grain as the board */
-body::after { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"); }
+body { overflow: hidden; background: var(--page); color: var(--ink); font: 500 16px/1.4 var(--body); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+a { color: inherit; text-decoration: none; }
 em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: 0; }
-button { font: inherit; color: inherit; cursor: pointer; }
-:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 8px; }
+[hidden] { display: none !important; }
+/* the same static film grain as the board */
+body::after { content: ''; position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: .06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.w { display: inline-block; animation: blurIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes blurIn { from { opacity: 0; filter: blur(8px); transform: translateY(14px); } }
 
-.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 18px 28px; border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 12px; font: 700 18px/1 var(--cond); letter-spacing: .2em; white-space: nowrap; }
-.brand svg { width: 26px; height: 26px; fill: var(--amber); }
-.brand em { color: var(--amber); font-size: 1.45em; text-transform: none; margin-left: 4px; }
-.badges { display: flex; gap: 10px; }
-.badge { font: 700 13px/1 var(--cond); letter-spacing: .16em; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); }
-.badge.on { color: var(--amber); border-color: #4a3a1c; }
+/* ---------- the room: a warm wall, one light on the screen ---------- */
+.room { position: fixed; inset: 0; display: grid; grid-template-rows: var(--nav) 1fr auto auto var(--dock); justify-items: center;
+  background: radial-gradient(1100px 620px at 50% 34%, #ffb5471a, transparent 70%), radial-gradient(1600px 700px at 50% 110%, #ffb5470d, transparent 60%), linear-gradient(#0d0c0a, #080706); }
+.room::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(#ffffff0d 1px, transparent 1.2px); background-size: 26px 26px; mask-image: radial-gradient(ellipse at 50% 40%, #000, transparent 70%); -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000, transparent 70%); }
 
-.main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; padding: 28px; min-height: 0; }
-.stage { display: grid; place-items: center; min-width: 0; }
-/* Echo Show 15 sized: a 16:9 screen in a slim black frame */
-.device { position: relative; width: min(100%, calc((100vh - 230px) * 16 / 9)); aspect-ratio: 16 / 9; border-radius: 22px; padding: 1.4%; background: linear-gradient(#1b1c1f, #0c0d0e); box-shadow: 0 0 0 1px #2a2c30, 0 40px 90px #0009, inset 0 1px 0 #ffffff14; }
-.screen { position: relative; width: 100%; height: 100%; border-radius: 10px; overflow: hidden; background: #050506; }
-.home { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: 1.5vw; padding: 6%; background: radial-gradient(90% 120% at 15% 10%, #2a2216, #090807 70%); transition: opacity .6s var(--ease); }
-.home .t { font: 700 clamp(48px, 9vw, 150px)/.85 var(--cond); font-variant-numeric: tabular-nums; }
-.home .d { font: 500 clamp(14px, 1.6vw, 26px)/1.2 var(--body); color: var(--dim); }
-.home .hint { margin-top: 1vw; font: 500 clamp(14px, 1.5vw, 24px)/1.3 var(--body); color: var(--ink); }
+/* ---------- nav ---------- */
+.nav { position: fixed; top: 14px; left: 50%; z-index: 30; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 18px; border-radius: 999px; background: #14120fd9; border: 1px solid #2c2822; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: 10px; font: 700 15px/1 var(--cond); letter-spacing: .24em; margin-right: 6px; }
+.brand svg { width: 20px; height: 20px; fill: var(--amber); }
+.brand em { color: var(--amber); font-size: 1.35em; letter-spacing: 0; margin-left: 2px; }
+.nav .l { min-height: 40px; padding: 0 14px; display: inline-flex; align-items: center; border-radius: 999px; font: 700 13px/1 var(--cond); letter-spacing: .18em; color: var(--dim); text-transform: uppercase; transition: color .3s, background-color .3s; }
+.nav .l:hover, .nav .l[aria-expanded='true'] { color: var(--ink); background: #ffffff0d; }
+.chip { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); font: 700 12px/1 var(--cond); letter-spacing: .16em; color: var(--dim); }
+.chip.on { color: var(--amber); border-color: #4a3a1c; }
+.play { min-height: 44px; padding: 0 22px; border-radius: 999px; background: var(--amber); color: #120e06; font: 700 14px/1 var(--cond); letter-spacing: .18em; text-transform: uppercase; transition: transform .3s var(--ease), background-color .3s; }
+.play:hover { transform: translateY(-2px); background: #ffc56e; }
+.play[disabled] { background: #3a2f18; color: var(--amber); cursor: default; transform: none; }
+
+/* ---------- the Echo Show 15 on the wall ---------- */
+.stage { grid-row: 2; align-self: center; position: relative; width: min(74vw, calc((100svh - var(--nav) - var(--dock) - var(--talk)) * 16 / 9)); }
+.device { position: relative; aspect-ratio: 16 / 9; padding: 1.6%; border-radius: 20px; background: linear-gradient(150deg, #24221e, #0c0b0a 55%); box-shadow: 0 0 0 1px #34302a, 0 70px 120px -40px #000, 0 40px 120px -60px #ffb54744, inset 0 1px 0 #ffffff1c; }
+.device::before { content: ''; position: absolute; top: .55%; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #2b2924; box-shadow: inset 0 0 0 1px #3a362f; }
+.device::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(115deg, #ffffff10 0%, transparent 30%, transparent 72%, #ffffff06); }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 8px; overflow: hidden; background: #050506; }
+.floor { position: absolute; left: 8%; right: 8%; bottom: -46px; height: 50px; border-radius: 50%; background: radial-gradient(ellipse at 50% 0%, #ffb5471c, transparent 70%); filter: blur(16px); }
+.home { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: 1.2vw; padding: 6%; background: radial-gradient(90% 120% at 15% 10%, #2a2216, #090807 70%); transition: opacity .6s var(--ease); }
+.home .t { font: 700 clamp(48px, 8vw, 150px)/.85 var(--cond); font-variant-numeric: tabular-nums; }
+.home .d { font: 500 clamp(14px, 1.4vw, 26px)/1.2 var(--body); color: var(--dim); }
+.home .hint { margin-top: 1vw; font: 500 clamp(14px, 1.3vw, 24px)/1.3 var(--body); }
 .home .hint b { color: var(--amber); font-weight: 500; }
 .home.gone { opacity: 0; pointer-events: none; }
-.view { position: absolute; border: 0; background: transparent; transition-property: left, top, right, bottom, width, height, transform, border-radius, box-shadow; transition-duration: .55s; transition-timing-function: var(--ease); }
+.view { position: absolute; border: 0; background: transparent; transition-property: left, top, right, bottom, width, height, transform, border-radius, box-shadow; transition-duration: .7s; transition-timing-function: var(--ease); }
 .view.fullscreen { inset: 0; width: 100%; height: 100%; border-radius: 0; }
 .view.inline { left: 50%; bottom: 7%; width: min(560px, 62%); height: 46%; transform: translateX(-50%); border-radius: 14px; box-shadow: 0 20px 60px #000c; }
-.reply { position: absolute; left: 6%; right: 6%; bottom: 57%; font: 500 clamp(14px, 1.7vw, 28px)/1.3 var(--body); text-align: center; opacity: 0; transition: opacity .4s; text-shadow: 0 2px 20px #000; }
+.reply { position: absolute; left: 6%; right: 6%; bottom: 57%; font: 500 clamp(14px, 1.5vw, 28px)/1.3 var(--body); text-align: center; opacity: 0; transition: opacity .4s; text-shadow: 0 2px 20px #000; }
 .reply.show { opacity: 1; }
+/* Alexa's light: the one place this page uses her colour, with her replies */
 .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, transparent, var(--alexa), transparent); opacity: 0; transition: opacity .3s; }
 .bar.on { opacity: 1; animation: listen 1.2s ease-in-out infinite; }
 @keyframes listen { 50% { transform: scaleX(.6); } }
 
-.side { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 16px; min-height: 0; }
-.k { font: 700 13px/1 var(--cond); letter-spacing: .22em; color: var(--dim); }
-.k .n { color: var(--amber); margin-right: 10px; }
-.who { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.who button { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); font: 700 15px/1 var(--cond); letter-spacing: .12em; }
-.who button[aria-pressed='true'] { border-color: var(--amber); color: var(--amber); } /* cyan means Alexa, and only Alexa */
-.log { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 4px 4px 0; min-height: 120px; scrollbar-width: thin; }
-.msg { max-width: 92%; padding: 12px 14px; border-radius: 12px; line-height: 1.35; animation: pop .35s var(--ease) both; }
-.msg.you { align-self: flex-end; background: #22252b; }
-.msg.alexa { align-self: flex-start; background: #0f2530; border: 1px solid #164257; }
-.msg.err { border-color: #5a2a22; background: #2a1714; }
-.msg .w { display: block; font: 700 12px/1 var(--cond); letter-spacing: .18em; color: var(--dim); margin-bottom: 6px; }
-.msg.alexa .w { color: var(--alexa); }
-@keyframes pop { from { opacity: 0; transform: translateY(8px); } }
-.say { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 10px; }
-.mic { width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); display: grid; place-items: center; }
+/* ---------- captions: the conversation, as subtitles ---------- */
+.captions { grid-row: 3; width: min(1100px, 86vw); height: 150px; padding-top: 34px; text-align: center; }
+.cap-you { display: flex; justify-content: center; align-items: baseline; gap: 12px; color: #b9b1a2; font-size: 17px; min-height: 26px; }
+.cap-you b { font: 700 13px/1 var(--cond); letter-spacing: .22em; color: var(--amber); }
+.cap-alexa { margin-top: 8px; font: 400 clamp(22px, 2vw, 34px)/1.25 var(--serif); font-style: italic; min-height: 46px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.cap-alexa b { font: 700 13px/1 var(--cond); letter-spacing: .22em; font-style: normal; color: var(--alexa); margin-right: 12px; vertical-align: middle; }
+.cap-alexa.err { color: var(--late); }
+
+/* ---------- the demo morning's timeline ---------- */
+.timeline { grid-row: 4; position: relative; width: min(1100px, 86vw); height: 50px; }
+.timeline .track, .timeline .fill { position: absolute; left: 0; right: 0; top: 20px; height: 2px; }
+.timeline .track { background: var(--line); }
+.timeline .fill { transform-origin: 0 50%; transform: scaleX(0); background: var(--amber); }
+.timeline .tick { position: absolute; top: 15px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #0a0908; border: 2px solid #4a4337; transition: border-color .4s, background-color .4s, transform .4s var(--ease); }
+.timeline .tick.past { border-color: var(--amber); background: var(--amber); }
+.timeline .tick.key { border-color: var(--late); }
+.timeline .tick.key.past { background: var(--late); transform: scale(1.35); }
+.timeline .lbl { position: absolute; top: 36px; transform: translateX(-50%); font: 700 11px/1 var(--cond); letter-spacing: .18em; color: var(--dim); white-space: nowrap; }
+.timeline .lbl.key { color: var(--late); }
+.timeline .lbl.end { color: var(--amber); }
+
+/* ---------- the dock: who is speaking, the mic, what to say ---------- */
+.dock { grid-row: 5; align-self: end; width: min(1180px, 94vw); padding-bottom: 22px; display: grid; gap: 12px; }
+.tries { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 90%, transparent); -webkit-mask-image: linear-gradient(90deg, #000 90%, transparent); }
+.tries::-webkit-scrollbar { display: none; }
+.tries button { flex: none; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: #13110ecc; color: var(--dim); font-size: 14px; transition: color .25s, border-color .25s, transform .3s var(--ease); }
+.tries button:hover { color: var(--ink); border-color: var(--faint); transform: translateY(-2px); }
+.bar-row { display: flex; align-items: center; gap: 14px; padding: 10px; border-radius: 26px; background: #14120fd9; border: 1px solid #2c2822; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.who { display: flex; gap: 4px; padding-right: 12px; border-right: 1px solid var(--line); }
+.who button { display: grid; justify-items: center; gap: 4px; min-width: 60px; min-height: 60px; padding: 4px 6px; border-radius: 14px; transition: background-color .3s; }
+.who button:hover { background: #ffffff08; }
+.who .av { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font: 700 16px/1 var(--cond); background: #221f1a; border: 1.5px solid #3a352d; transition: border-color .3s, box-shadow .3s, color .3s; }
+.who .nm { font: 700 11px/1 var(--cond); letter-spacing: .16em; color: var(--dim); }
+.who button[aria-pressed='true'] .av { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 0 4px #ffb5471f; }
+.who button[aria-pressed='true'] .nm { color: var(--amber); }
+.who button.talking .av { animation: talk .7s var(--ease) infinite alternate; }
+@keyframes talk { to { box-shadow: 0 0 0 7px #ffb54733; } }
+.say { flex: 1; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.mic { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: #221f1a; border: 1.5px solid #3a352d; transition: background-color .3s, border-color .3s, transform .3s var(--ease); }
+.mic:hover { transform: scale(1.05); border-color: var(--ink); }
 .mic svg { width: 22px; height: 22px; fill: var(--ink); }
 .mic.on { background: var(--alexa); border-color: var(--alexa); }
 .mic.on svg { fill: #04141b; }
-.say input { min-width: 0; height: 52px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 0 16px; font: 500 16px var(--body); }
+.say input { min-width: 0; height: 52px; border-radius: 16px; border: 1px solid transparent; background: #0d0c0a; color: var(--ink); padding: 0 18px; font: 500 16px var(--body); }
+.say input:focus { border-color: #4a4337; outline: none; }
 .say input::placeholder { color: var(--dim); }
-.tries { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.tries button { min-height: 44px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--dim); font-size: 14px; }
-.tries button:hover { color: var(--ink); border-color: var(--faint); }
-.play { min-height: 52px; border-radius: 12px; border: 1px solid #4a3a1c; background: #1f1910; color: var(--amber); font: 700 16px/1 var(--cond); letter-spacing: .16em; }
-.play[disabled] { opacity: .5; cursor: default; }
+.send { min-height: 52px; padding: 0 20px; border-radius: 16px; border: 1px solid #3a352d; font: 700 13px/1 var(--cond); letter-spacing: .18em; transition: border-color .25s; }
+.send:hover { border-color: var(--ink); }
 
-.inspector { border-top: 1px solid var(--line); }
-.inspector summary { padding: 12px 28px; cursor: pointer; list-style: none; display: flex; gap: 12px; align-items: center; }
-.inspector summary::-webkit-details-marker { display: none; }
-.inspector pre { max-height: 180px; overflow: auto; padding: 0 28px 16px; font: 12px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: var(--dim); white-space: pre-wrap; }
-.inspector pre .out { color: var(--alexa); } .inspector pre .in { color: var(--go); } .inspector pre .err { color: var(--late); }
-.note { font-size: 13px; color: var(--dim); }
+/* ---------- the drawer: the whole conversation and the protocol ---------- */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 40; width: min(480px, 92vw); display: grid; grid-template-rows: auto auto 1fr; gap: 14px; padding: 92px 22px 22px; background: #11100dee; border-left: 1px solid #2c2822; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); transform: translateX(100%); visibility: hidden; transition: transform .6s var(--ease), visibility 0s linear .6s; }
+.drawer.open { transform: none; visibility: visible; transition: transform .6s var(--ease); }
+.tabs { display: flex; gap: 6px; }
+.tabs button { min-height: 40px; padding: 0 16px; border-radius: 999px; font: 700 13px/1 var(--cond); letter-spacing: .18em; color: var(--dim); border: 1px solid var(--line); }
+.tabs button[aria-selected='true'] { color: var(--ink); border-color: #4a4337; background: #ffffff0a; }
+.dnote { font-size: 13px; color: var(--dim); }
+.log { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; scrollbar-width: thin; }
+.msg { max-width: 92%; padding: 11px 14px; border-radius: 14px; line-height: 1.38; font-size: 15px; animation: pop .45s var(--ease) both; }
+.msg.you { align-self: flex-end; background: #22201b; }
+.msg.alexa { align-self: flex-start; background: #0f2530; border: 1px solid #164257; }
+.msg.err { border-color: #5a2a22; background: #2a1714; }
+.msg .who-l { display: block; font: 700 11px/1 var(--cond); letter-spacing: .18em; color: var(--dim); margin-bottom: 6px; }
+.msg.alexa .who-l { color: var(--alexa); }
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+pre.insp { overflow: auto; font: 12px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: var(--dim); white-space: pre-wrap; }
+pre.insp .out { color: var(--alexa); } pre.insp .in { color: var(--go); } pre.insp .err { color: var(--late); }
 
-@media (max-width: 1100px) { .main { grid-template-columns: 1fr; } .device { width: 100%; } }
-@media (prefers-reduced-motion: reduce) { .view, .home, .msg, .bar.on { transition: none; animation: none; } }
+@media (max-width: 900px) {
+  :root { --dock: 200px; }
+  .nav .l, .chip { display: none !important; }
+  .stage { width: 94vw; }
+  .bar-row { flex-wrap: wrap; } .who { border-right: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .view, .home, .msg, .bar.on, .w, .drawer, .who button.talking .av, .timeline .tick { transition: none; animation: none; } }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES <em>on Alexa+, simulated</em></div>
-  <div class="badges"><span class="badge" id="proto">CONNECTING</span><span class="badge" id="clockRate" hidden></span></div>
-</header>
-<div class="main">
+<nav class="nav" aria-label="Departures">
+  <a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES <em>on Alexa+</em></a>
+  <a class="l" href="/">Story</a>
+  <span class="chip" id="proto">CONNECTING</span><span class="chip" id="clockRate" hidden></span>
+  <button class="l" id="drawerBtn" type="button" aria-expanded="false" aria-controls="drawer">Inspector</button>
+  <button class="play" id="play" type="button">Play the morning →</button>
+</nav>
+
+<main class="room">
   <section class="stage" aria-label="Simulated Echo Show 15">
     <div class="device"><div class="screen" id="screen">
       <div class="home" id="home"><div class="t" id="homeTime">7:12</div><div class="d" id="homeDate"></div><div class="hint">Try <b>"Alexa, start the school run. We leave in 36 minutes."</b></div></div>
       <div class="reply" id="reply" aria-hidden="true"></div>
       <div class="bar" id="bar"></div>
     </div></div>
+    <div class="floor" aria-hidden="true"></div>
   </section>
-  <aside class="side">
-    <div><div class="k"><span class="n">01</span>WHO IS SPEAKING</div><div class="who" id="who" role="group" aria-label="Who is speaking"></div></div>
-    <p class="note">Alexa+ recognises voices. Here, pick the speaker so "I'm done" knows who you are.</p>
-    <div class="log" id="log" aria-live="polite" aria-label="Conversation"></div>
-    <div>
-      <div class="k"><span class="n">02</span>SAY SOMETHING</div>
-      <form class="say" id="say"><button class="mic" id="mic" type="button" aria-label="Hold to talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg></button><input id="text" autocomplete="off" placeholder="Type what you would say to Alexa" aria-label="What you say" /></form>
-      <div class="tries" id="tries"></div>
+
+  <div class="captions" aria-live="polite">
+    <div class="cap-you" id="capYou"></div>
+    <div class="cap-alexa" id="capAlexa"><b>ALEXA</b><em>Press play, or say something below.</em></div>
+  </div>
+
+  <div class="timeline" id="tl" hidden aria-hidden="true"><div class="track"></div><div class="fill" id="tlFill"></div></div>
+
+  <div class="dock">
+    <div class="tries" id="tries" aria-label="Things to say"></div>
+    <div class="bar-row">
+      <div class="who" id="who" role="group" aria-label="Who is speaking"></div>
+      <form class="say" id="say"><button class="mic" id="mic" type="button" aria-label="Hold to talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg></button><input id="text" autocomplete="off" placeholder="Say something to Alexa, as the person picked on the left" aria-label="What you say" /><button class="send" type="submit">SAY IT</button></form>
     </div>
-    <button class="play" id="play" type="button">PLAY THE DEMO MORNING</button>
-  </aside>
-</div>
-<details class="inspector"><summary><span class="k">PROTOCOL INSPECTOR</span><span class="note" id="inspSummary">MCP over Streamable HTTP</span></summary><pre id="insp"></pre></details>
+  </div>
+</main>
+
+<aside class="drawer" id="drawer" aria-label="Conversation and protocol">
+  <div class="tabs" role="tablist"><button type="button" role="tab" id="tabLog" aria-selected="true" aria-controls="log">CONVERSATION</button><button type="button" role="tab" id="tabInsp" aria-selected="false" aria-controls="insp">PROTOCOL</button></div>
+  <p class="dnote">Alexa+ recognises voices; here, pick who is speaking so "I'm done" knows who you are. The protocol tab shows every MCP message.</p>
+  <div class="log" id="log" role="tabpanel" aria-labelledby="tabLog"></div>
+  <pre class="insp" id="insp" role="tabpanel" aria-labelledby="tabInsp" hidden></pre>
+</aside>
 <script>/*SCRIPT*/</script>
 </body>
 </html>

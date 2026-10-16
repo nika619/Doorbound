@@ -25,9 +25,9 @@ const hhmm = (ms: number) => {
 // ---------- protocol inspector (bounded) ----------
 const insp = $('insp');
 function log(kind: 'out' | 'in' | 'err', text: string) {
-  const line = el('span', kind, insp, `${(performance.now() / 1000).toFixed(1).padStart(6)}s  ${text}\n`);
+  el('span', kind, insp, `${(performance.now() / 1000).toFixed(1).padStart(6)}s  ${text}\n`);
   if (insp.childElementCount > 200) insp.firstElementChild!.remove();
-  line.scrollIntoView({ block: 'nearest' });
+  insp.scrollTop = insp.scrollHeight;
 }
 let polls = 0;
 let pollLine: HTMLElement | null = null;
@@ -77,8 +77,12 @@ function setPeople(names: string[]) {
   const who = $('who');
   who.replaceChildren();
   for (const name of ['Mum', ...names]) {
-    const b = el('button', '', who, name.toUpperCase());
+    const b = el('button', '', who);
     b.type = 'button';
+    b.dataset.name = name;
+    b.setAttribute('aria-label', `Speak as ${name}`);
+    el('span', 'av', b, name.charAt(0).toUpperCase()).setAttribute('aria-hidden', 'true');
+    el('span', 'nm', b, name.toUpperCase()).setAttribute('aria-hidden', 'true');
     b.setAttribute('aria-pressed', String(name === speaker));
     b.addEventListener('click', () => {
       speaker = name;
@@ -93,13 +97,45 @@ async function loadPeople() {
 
 // ---------- conversation ----------
 const voiceOn = 'speechSynthesis' in window;
+/** Append `text` word by word: each word blurs in 45 ms after the one before. */
+function words(into: HTMLElement, text: string) {
+  let i = 0;
+  for (const part of text.split(/(\s+)/)) {
+    if (!part) continue;
+    if (/^\s+$/.test(part)) into.append(part);
+    else el('span', 'w', into, part).style.setProperty('--i', String(i++));
+  }
+}
 function addMsg(kind: 'you' | 'alexa', text: string, who: string, error = false) {
   const log = $('log');
   const m = el('div', `msg ${kind}${error ? ' err' : ''}`, log);
-  el('span', 'w', m, who.toUpperCase());
+  el('span', 'who-l', m, who.toUpperCase());
   m.append(document.createTextNode(text));
   if (log.childElementCount > 100) log.firstElementChild!.remove();
-  m.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  log.scrollTop = log.scrollHeight;
+  // The captions under the screen: what was just said, and Alexa's answer, as subtitles.
+  if (kind === 'you') {
+    const cap = $('capYou');
+    cap.replaceChildren();
+    el('b', '', cap, who.toUpperCase());
+    words(el('span', '', cap), `“${text}”`);
+    const alexa = $('capAlexa');
+    alexa.classList.remove('err');
+    alexa.replaceChildren();
+    el('b', '', alexa, 'ALEXA');
+    el('em', '', alexa, '…');
+    const b = [...$('who').children].find((x) => (x as HTMLElement).dataset.name === who);
+    if (b) {
+      b.classList.add('talking');
+      setTimeout(() => b.classList.remove('talking'), 1600);
+    }
+  } else {
+    const alexa = $('capAlexa');
+    alexa.classList.toggle('err', error);
+    alexa.replaceChildren();
+    el('b', '', alexa, 'ALEXA');
+    words(el('em', '', alexa), text);
+  }
 }
 let replyTimer: ReturnType<typeof setTimeout> | undefined;
 function alexaSays(text: string, error = false) {
@@ -237,12 +273,37 @@ else {
 
 // ---------- the demo morning: the design-frame story, on the server's clock ----------
 const DEMO = DEMO_MORNING.map((e) => [e.at, e.who, e.say] as const);
+const GATE_MIN = 'start' in DEMO_MORNING[0].act ? DEMO_MORNING[0].act.start : 36;
+/** The morning as a line: a dot per line said, the news in red, the gate at the end; it fills as time passes. */
+function timeline(startPerf: number) {
+  const tl = $('tl');
+  tl.hidden = false;
+  for (const x of tl.querySelectorAll('.tick, .lbl')) x.remove();
+  const ticks = DEMO.map(([minute, , line]) => {
+    const key = /still/i.test(line);
+    const t = el('div', `tick${key ? ' key' : ''}`, tl);
+    t.style.left = `${(100 * minute) / GATE_MIN}%`;
+    if (key || minute === 0) el('div', `lbl${key ? ' key' : ''}`, tl, key ? 'STILL IN THE SHOWER' : 'START').style.left = `${(100 * minute) / GATE_MIN}%`;
+    return [minute, t] as const;
+  });
+  el('div', 'lbl end', tl, 'GATE').style.left = '100%';
+  const fill = $('tlFill');
+  const step = () => {
+    const minutes = ((performance.now() - startPerf) * rate) / 60_000;
+    fill.style.transform = `scaleX(${Math.min(1, minutes / GATE_MIN).toFixed(4)})`;
+    for (const [m, t] of ticks) t.classList.toggle('past', m <= minutes);
+    if (minutes < GATE_MIN + 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 $('play').addEventListener('click', async () => {
   const play = $<HTMLButtonElement>('play');
   play.disabled = true;
+  play.textContent = 'Playing…';
   await client.callTool({ name: 'end_departure', arguments: {} }).catch(() => undefined);
   await syncClock();
   const start = performance.now();
+  timeline(start);
   for (const [minute, who, line] of DEMO) {
     const at = start + (minute * 60_000) / rate;
     await new Promise((r) => setTimeout(r, Math.max(0, at - performance.now())));
@@ -255,7 +316,24 @@ $('play').addEventListener('click', async () => {
     }
   }
   play.disabled = false;
+  play.textContent = 'Play again →';
 });
+
+// ---------- the drawer: the whole conversation, and every MCP message ----------
+const drawer = $('drawer');
+const drawerBtn = $('drawerBtn');
+drawerBtn.addEventListener('click', () => {
+  const open = !drawer.classList.contains('open');
+  drawer.classList.toggle('open', open);
+  drawerBtn.setAttribute('aria-expanded', String(open));
+});
+for (const [tab, panel] of [['tabLog', 'log'], ['tabInsp', 'insp']] as const)
+  $(tab).addEventListener('click', () => {
+    for (const [t, p] of [['tabLog', 'log'], ['tabInsp', 'insp']] as const) {
+      $(t).setAttribute('aria-selected', String(t === tab));
+      $(p).hidden = p !== panel;
+    }
+  });
 
 // ---------- home screen clock ----------
 await syncClock();
