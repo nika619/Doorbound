@@ -142,8 +142,10 @@ npm run typecheck
 src/core/     the model: statistics, learning, the departure, the re-planner (pure functions, no I/O)
 src/server/   the MCP server, tools, storage, audit log, HTTP guards
 src/board/    the board (an MCP App), and its 2 kB bridge to the host
+src/site/     the story page: scroll scenes drawn from the core, the board replaying inside
 src/sim/      the Alexa+ simulator and the small router that stands in for Alexa's language model
-scripts/      build, smoke test, benchmark, one-turn client
+scripts/      build (pages and the server bundle), smoke test, benchmark, screenshots, one-turn client
+Dockerfile, compose.yaml   the container and the one-command HTTPS deployment
 ```
 
 - **The server holds the clock and the state; screens hold nothing.** Every screen derives the board from the same core functions and the server's time, so an Echo Show and a TV agree to the second.
@@ -154,7 +156,8 @@ scripts/      build, smoke test, benchmark, one-turn client
 
 - **From the object itself.** An airport departure board, read from across a kitchen: amber on warm black, split-flap letters, one row per traveller. A soft spotlight and film grain keep it from looking like a spreadsheet.
 - **Two voices of type.** Bold condensed capitals for the facts, an italic serif for the one word that carries the feeling ("The *school run*", "*Re-routed.*", "takes *12 minutes*"), Barlow for everything else. All three under the SIL Open Font License.
-- **Motion with a job.** Words arrive one by one (blur to sharp, 60 ms apart, expo-out); the household's chance counts up when a re-plan changes it; blocks glide to their new lane; a hairline fills with the time gone. Nothing loops for decoration, and reduced motion turns it all off.
+- **Motion with a job.** Real split-flaps: the old top half falls, the new bottom half swings in and settles. A re-route is choreographed: an amber scan crosses the runway, the rows it touches light up, the handed-over step lifts out of one lane and arcs into another, the chance counts up. A change of standing sweeps the row in its new colour. Words arrive one by one (blur to sharp, 60 ms apart, expo-out). Nothing loops for decoration, and reduced motion turns it all off.
+- **A story, not a brochure.** The page at `/` is a scroll story in the genre of cinematic product sites: pinned stages, one idea per beat, a progress hairline and a numbered rail, one hard colour block, a giant outlined wordmark. Its hero object is the product itself, replaying live on a wall-mounted Echo Show, and every chart in it is the real model, not an illustration.
 - **Calm by default.** Sound (a flap clatter, a chime on a re-route) is off until someone switches it on. The minutes left sit behind everything as a faint outline, not a flashing countdown.
 - **Readable by everyone.** Text contrast at least 4.5:1 (3:1 for large labels), measured; real buttons with focus rings and names that say whose step they mark; a screen-reader sentence per row and spoken updates; nothing told by colour alone.
 
