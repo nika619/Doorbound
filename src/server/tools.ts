@@ -53,7 +53,8 @@ type Board = z.infer<typeof boardSchema>;
 
 function board(ctx: Ctx): Board {
   const { store } = ctx;
-  const dep = store.departure;
+  // Open forecasts are the server's own bookkeeping (score.ts), not part of the board.
+  const dep = store.departure && (({ forecasts: _, ...rest }) => rest)(store.departure);
   const people = store.household.people;
   const names = new Map(people.map((p) => [p.id, p]));
   return {

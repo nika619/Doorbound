@@ -27,6 +27,7 @@ test('the demo morning, as Alexa says it', async () => {
   };
 
   const start = await say(0, 'start_departure', { leaveAt: '07:49' });
+  assert.ok(!JSON.stringify(start.board).includes('forecasts'), 'open forecasts are server bookkeeping, not board data');
   assert.match(start.text, /^School run started\. Everyone is on time\. Leave at 7:49, in 37 minutes\. Isha is the tightest, at 9\d%\.$/);
   await say(8.1, 'step_done', { person: 'Dad' });
   await say(12.1, 'step_done', { person: 'aarav' });
