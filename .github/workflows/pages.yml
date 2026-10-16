@@ -1,0 +1,41 @@
+# Publishes the story page to GitHub Pages: it runs with no server (the board inside it replays the demo
+# morning in the browser). Run it by hand (Actions > Pages > Run workflow) once Pages is switched on
+# with "GitHub Actions" as the source in the repository's settings.
+name: Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: The story page as the site, the board beside it
+        run: |
+          mkdir -p _site
+          cp dist/site.html _site/index.html
+          cp dist/board.html _site/board.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
