@@ -136,6 +136,8 @@ Against a running server (18 checks): both protocol versions, every tool's schem
 npm run typecheck
 ```
 
+On GitHub, CI runs all of this on every push (Node 22 and 24), then builds the Docker image, checks it refuses to start without a token, and runs the smoke test against the container running read-only with every capability dropped. Dependabot checks the dependencies weekly.
+
 ## How it is built
 
 ```
