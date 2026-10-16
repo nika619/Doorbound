@@ -1,5 +1,7 @@
 # Doorbound
 
+[![CI](https://github.com/nika619/Doorbound/actions/workflows/ci.yml/badge.svg)](https://github.com/nika619/Doorbound/actions/workflows/ci.yml) ![MIT licence](https://img.shields.io/badge/licence-MIT-ffb547) ![MCP 2025-11-25](https://img.shields.io/badge/MCP-2025--11--25-ffb547)
+
 *Every morning is a departure.*
 
 **The household's morning, as a live departure board on Alexa+.** Who is doing what, each person's real chance of making the door on time, and a new plan the moment someone slips.
