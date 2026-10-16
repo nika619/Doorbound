@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, test, build, smoke (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # No install scripts: nothing in the dependency tree runs or downloads anything.
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Start the bundled server (demo household, 20x clock)
+        run: |
+          DEMO_SEED=1 DEMO_SPEED=20 DATA_DIR="$RUNNER_TEMP/data" node dist/server.mjs &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3939/healthz && break; sleep 1; done
+      - name: End-to-end smoke test over Streamable HTTP
+        run: npm run smoke
