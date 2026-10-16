@@ -8,7 +8,7 @@
 // (pace.ts): each finished step says how today is going, and the rest of their morning moves with it.
 
 import { keyOf, type History } from './learn.ts';
-import { addPart, adjust, censor, paceFactor, paceOf, PARTS, RHO_PRIOR, total, type Pace } from './pace.ts';
+import { addPart, adjust, censor, householdPace, paceFactor, paceOf, PARTS, readings, RHO_PRIOR, total, type Pace } from './pace.ts';
 import { cdf, moments, posterior, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
 
 export interface StepDef {
@@ -91,6 +91,8 @@ export interface Departure {
   reroute: Reroute | null;
   /** How strongly one person's steps run slow or fast together in this household (pace.ts). */
   rho: number;
+  /** How strongly different people's mornings run slow together (pace.ts); 0 until the household shows it. */
+  kappa?: number;
   /** Chances given and not yet scored (score.ts). */
   forecasts?: { personId: string; p: number; atMs: number }[];
 }
@@ -106,13 +108,13 @@ const EXTEND_SIGMA = 0.25;
 export const durationOf = (history: History, personId: string, stepId: string, statedSec: number): LogNormal =>
   posterior(statedSec, history.get(keyOf(personId, stepId)));
 
-export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number, rho = RHO_PRIOR): Departure {
+export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number, rho = RHO_PRIOR, kappa = 0): Departure {
   const lanes = household.people.map((p) => ({
     personId: p.id,
     startedAtMs: nowMs,
     tasks: p.steps.map((s) => ({ key: `${p.id}/${s.id}`, stepId: s.id, forPerson: p.id, name: s.name, state: 'todo' as const, ...durationOf(history, p.id, s.id, s.statedSec) })),
   }));
-  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho };
+  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho, kappa };
 }
 
 // ---------- reading a lane ----------
@@ -143,10 +145,29 @@ export function currentRemaining(lane: Lane, idx: number, nowMs: number, rho: nu
 /** A step still to come, at today's pace. */
 export const stepMoments = (d: LogNormal, pace: Pace, rho: number) => moments(adjust(d, pace, rho));
 
-/** Today's pace for the steps still to come: the finished steps' readings, and how long the current one has run. */
-function paceAhead(lane: Lane, idx: number, nowMs: number, rho: number, before: Pace): Pace {
+/** Today's pace for one lane: `before` its running step's elapsed time is known, and `ahead` of it, for the steps after. */
+export interface LanePace {
+  before: Pace;
+  ahead: Pace;
+}
+
+/** One lane on its own: its finished steps' readings, then how long the current one has run. */
+export function lanePace(lane: Lane, nowMs: number, rho: number): LanePace {
+  const before = paceOf(lane, rho);
+  const idx = currentIndex(lane);
   const t = lane.tasks[idx];
-  return idx < 0 || t.extend ? before : censor(before, t, rho, (nowMs - currentStartMs(lane, idx)) / 1000);
+  return { before, ahead: idx < 0 || t.extend ? before : censor(before, t, rho, (nowMs - currentStartMs(lane, idx)) / 1000) };
+}
+
+/** Every lane, sharing the household's pace when it has one (kappa > 0); otherwise each on its own, exactly. */
+export function departurePaces(dep: Pick<Departure, 'lanes' | 'rho' | 'kappa'>, nowMs: number): LanePace[] {
+  if (!(dep.kappa! > 0) || dep.lanes.length < 2) return dep.lanes.map((l) => lanePace(l, nowMs, dep.rho));
+  const running = dep.lanes.map((l) => {
+    const i = currentIndex(l);
+    return i < 0 || l.tasks[i].extend ? null : { d: l.tasks[i], elapsedSec: (nowMs - currentStartMs(l, i)) / 1000 };
+  });
+  const { before, ahead } = householdPace(dep.lanes.map(readings), running, dep.rho, dep.kappa!);
+  return before.map((b, i) => ({ before: b, ahead: ahead[i] }));
 }
 
 /**
@@ -167,11 +188,10 @@ function loading(lane: Lane, idx: number, nowMs: number, rho: number, ahead: Pac
  * Everything this lane still has to do, from now, as the running sums of pace.ts, with today's pace for
  * the steps to come and the covariance factor c it leaves. O(t).
  */
-export function lanePart(lane: Lane, nowMs: number, rho: number): { acc: Float64Array; c: number; pace: Pace } {
+export function lanePart(lane: Lane, nowMs: number, rho: number, lp = lanePace(lane, nowMs, rho)): { acc: Float64Array; c: number; pace: Pace } {
   const acc = new Float64Array(PARTS);
-  const before = paceOf(lane, rho);
+  const { before, ahead: pace } = lp;
   const idx = currentIndex(lane);
-  const pace = paceAhead(lane, idx, nowMs, rho, before);
   if (idx >= 0) {
     const cur = currentRemaining(lane, idx, nowMs, rho, before); // exact as it is: X | X > elapsed under the readings
     addPart(acc, cur, loading(lane, idx, nowMs, rho, pace, cur.mean));
@@ -184,8 +204,8 @@ export function lanePart(lane: Lane, nowMs: number, rho: number): { acc: Float64
 }
 
 /** Mean and variance of everything this lane still has to do, from now. O(t). */
-export function laneMoments(lane: Lane, nowMs: number, rho: number): Moments {
-  const { acc, c } = lanePart(lane, nowMs, rho);
+export function laneMoments(lane: Lane, nowMs: number, rho: number, lp?: LanePace): Moments {
+  const { acc, c } = lanePart(lane, nowMs, rho, lp);
   return total(acc, c);
 }
 
@@ -219,9 +239,9 @@ export interface LaneView {
 }
 
 /** Where a person stands at `nowMs`. O(t). */
-export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: number): LaneView {
+export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: number, lp?: LanePace): LaneView {
   const idx = currentIndex(lane);
-  const { acc, c, pace: p } = lanePart(lane, nowMs, rho);
+  const { acc, c, pace: p } = lanePart(lane, nowMs, rho, lp);
   const pace = p.n ? paceFactor(p, rho, lane.tasks.reduce((a, t) => a + t.sigma, 0) / lane.tasks.length) : 0;
   if (idx < 0) {
     const last = lane.tasks.findLast((t) => t.state === 'done');
@@ -252,10 +272,14 @@ export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: numb
 }
 
 export function project(dep: Departure, nowMs: number): LaneView[] {
-  return dep.lanes.map((l) => projectLane(l, dep.gateMs, nowMs, dep.rho));
+  const paces = departurePaces(dep, nowMs);
+  return dep.lanes.map((l, i) => projectLane(l, dep.gateMs, nowMs, dep.rho, paces[i]));
 }
 
-/** Chance that everyone makes the gate. Different people's mornings are taken as independent. */
+/**
+ * Chance that everyone makes the gate: the product of each person's. When the household shares a pace
+ * (kappa > 0) their mornings are linked positively, so the true chance is at least this (Harris-FKG).
+ */
 export const everyoneOnTime = (views: LaneView[]) => views.reduce((p, v) => p * v.pOnTime, 1);
 
 // ---------- events ----------
@@ -352,11 +376,10 @@ export interface Block {
  * current one ending at its expected remaining time, the rest queued after it, and steps that wait
  * queued after the gate, all at today's pace. Skipped steps are left out. O(t) for t tasks.
  */
-export function laneTimeline(lane: Lane, gateMs: number, nowMs: number, rho: number): Block[] {
+export function laneTimeline(lane: Lane, gateMs: number, nowMs: number, rho: number, lp = lanePace(lane, nowMs, rho)): Block[] {
   const out: Block[] = [];
   const idx = currentIndex(lane);
-  const before = paceOf(lane, rho);
-  const pace = paceAhead(lane, idx, nowMs, rho, before);
+  const { before, ahead: pace } = lp;
   let cursor = lane.startedAtMs;
   let after = gateMs;
   lane.tasks.forEach((t, i) => {

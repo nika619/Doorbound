@@ -21,7 +21,7 @@
 // gives the same plan.
 
 import type { History } from './learn.ts';
-import { applyChanges, currentIndex, durationOf, lanePart, project, stepMoments, TARGET, type Change, type ChangeKind, type Departure, type Household, type StepDef } from './departure.ts';
+import { applyChanges, currentIndex, departurePaces, durationOf, lanePart, project, stepMoments, TARGET, type Change, type ChangeKind, type Departure, type Household, type StepDef } from './departure.ts';
 import { addPart, PARTS, total, type Pace } from './pace.ts';
 import { cdf, posterior, quantile, sum } from './stats.ts';
 
@@ -60,13 +60,14 @@ export function findReroute(dep: Departure, household: Household, history: Histo
   const views = project(dep, nowMs);
   const P = dep.lanes.length;
   const gateSec = (dep.gateMs - nowMs) / 1000;
+  const lanePaces = departurePaces(dep, nowMs);
   const parts: Float64Array[] = [];
   const paces: Pace[] = [];
   /** Each lane's shared-pace factor: changes never alter it, since it rests on finished steps only. */
   const shared = new Float64Array(P);
   const touched = new Int32Array(P);
   for (let i = 0; i < P; i++) {
-    const lp = lanePart(dep.lanes[i], nowMs, dep.rho);
+    const lp = lanePart(dep.lanes[i], nowMs, dep.rho, lanePaces[i]);
     parts.push(lp.acc);
     paces.push(lp.pace);
     shared[i] = lp.c;
