@@ -130,7 +130,7 @@ npm test
 npm run smoke
 ```
 
-Against a running server: both protocol versions, every tool's schema, the MCP App resource, a morning with a re-route and undo, and the HTTP edges (foreign Origin 403, 64 kB cap, hash-only CSP).
+Against a running server (18 checks): both protocol versions, every tool's schema, the MCP App resource, a morning with a re-route and undo, the HTTP edges (foreign Origin 403, 64 kB cap, hash-only CSP on the board and the story page). It passes against `node dist/server.mjs` started from outside the project, which is what the container runs.
 
 ```bash
 npm run typecheck
@@ -173,6 +173,7 @@ The server refuses to start beyond loopback without a token and a host allow-lis
 - The simulator's router is a small rule set standing in for Alexa+'s language model, which in Alexa+ reads the tool descriptions itself.
 - Tested in browsers and the simulator, not on an Echo Show (we have no Amazon devices).
 - The board is designed for households of up to eight.
+- The Docker image and compose file have not been built here (no Docker on the development machine); the bundle they run is tested directly. Memory was measured on Windows.
 
 ## License
 
