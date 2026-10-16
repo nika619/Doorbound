@@ -45,15 +45,15 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: docker build -t departures .
+      - run: docker build -t doorbound .
       - name: Refuses to listen publicly without a token
         run: |
-          if docker run --rm departures; then echo "it started without AUTH_TOKEN"; exit 1; fi
+          if docker run --rm doorbound; then echo "it started without AUTH_TOKEN"; exit 1; fi
       - name: Runs locked down, the way compose.yaml runs it
         run: |
-          docker run -d --name departures -p 3939:3939 --read-only --tmpfs /tmp --cap-drop ALL \
+          docker run -d --name doorbound -p 3939:3939 --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges:true --memory 256m \
-            -e AUTH_TOKEN="$TOKEN" -e ALLOWED_HOSTS=localhost -e DEMO_SEED=1 departures
+            -e AUTH_TOKEN="$TOKEN" -e ALLOWED_HOSTS=localhost -e DEMO_SEED=1 doorbound
           for i in $(seq 1 30); do curl -sf http://localhost:3939/healthz && break; sleep 1; done
       - name: End-to-end smoke test against the container
         run: npm run smoke
@@ -62,4 +62,4 @@ jobs:
           AUTH_TOKEN: ${{ env.TOKEN }}
       - name: Container logs
         if: failure()
-        run: docker logs departures
+        run: docker logs doorbound

@@ -1,4 +1,4 @@
-# Departures: the self-hosted MCP server for Alexa+, as a small, locked-down container.
+# Doorbound: the self-hosted MCP server for Alexa+, as a small, locked-down container.
 #
 # Build stage: install, test the pages build, and bundle the server into one file.
 FROM node:24-alpine AS build
