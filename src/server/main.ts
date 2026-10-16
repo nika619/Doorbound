@@ -74,7 +74,7 @@ const manifest = (() => {
   }
 })();
 const load = (name: string): Page | null => (manifest[name] ? { html: readFileSync(join(root, 'dist', `${name}.html`), 'utf8'), hashes: manifest[name] } : null);
-const pages = { board: load('board') ?? fail('the board page is missing from the build.'), sim: load('sim') };
+const pages = { board: load('board') ?? fail('the board page is missing from the build.'), sim: load('sim'), site: load('site') };
 
 // ---------- guards ----------
 const validateHost = LOCAL ? localhostHostValidation() : hostHeaderValidation(ALLOWED_HOSTS);
@@ -141,6 +141,9 @@ const server = createServer(async (req, res) => {
       case '/board':
         return pageRoute(req, res, pages.board, client);
       case '/':
+        // The story page: no data, no tools, the board replaying in the browser. Safe to serve anywhere.
+        return pages.site ? pageRoute(req, res, pages.site, client) : send(res, 404, 'Not found.');
+      case '/sim':
         // The simulator is a development tool: never served beyond this machine.
         return LOCAL && pages.sim ? pageRoute(req, res, pages.sim, client, true) : send(res, 404, 'Not found.');
       case '/healthz':
