@@ -2,7 +2,7 @@
 // Configuration is validated at start; an unsafe combination refuses to start rather than running open.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,9 @@ import { baseHeaders, bearer, BodyTooLarge, clientOf, isLoopback, pageCsp, RateL
 import { Store } from './store.ts';
 import { boardOf, buildServer, type Ctx } from './tools.ts';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+// From source (src/server/) the project is two levels up; the bundle (dist/server.mjs) sits beside the manifest.
+const here = dirname(fileURLToPath(import.meta.url));
+const root = existsSync(join(here, 'manifest.json')) ? join(here, '..') : join(here, '..', '..');
 
 // ---------- configuration ----------
 const env = process.env;
@@ -26,8 +28,9 @@ const csv = (v?: string) => (v ?? '').split(',').map((s) => s.trim()).filter(Boo
 const PORT = Number(env.PORT ?? 3939);
 const HOST = env.HOST ?? '127.0.0.1';
 const LOCAL = isLoopback(HOST);
-const AUTH_TOKEN = env.AUTH_TOKEN;
-const SCREEN_KEY = env.SCREEN_KEY;
+// An empty variable (as compose passes for an unset one) means not set.
+const AUTH_TOKEN = env.AUTH_TOKEN || undefined;
+const SCREEN_KEY = env.SCREEN_KEY || undefined;
 const TRUST_PROXY = env.TRUST_PROXY === '1';
 const ALLOWED_HOSTS = csv(env.ALLOWED_HOSTS);
 const ALLOWED_ORIGINS = csv(env.ALLOWED_ORIGINS);
@@ -163,7 +166,7 @@ server.keepAliveTimeout = 5_000;
 server.maxHeadersCount = 64;
 server.listen(PORT, HOST, () => {
   const base = `http://${HOST.includes(':') ? `[${HOST}]` : HOST}:${PORT}`;
-  console.log(`Departures: MCP ${base}/mcp · board ${base}/board${LOCAL ? ` · simulator ${base}/` : ''}${DEMO_SPEED > 1 ? ` · demo clock ×${DEMO_SPEED}` : ''}`);
+  console.log(`Departures: MCP ${base}/mcp · story ${base}/ · board ${base}/board${LOCAL ? ` · simulator ${base}/sim` : ''}${DEMO_SPEED > 1 ? ` · demo clock ×${DEMO_SPEED}` : ''}`);
 });
 
 async function shutdown() {

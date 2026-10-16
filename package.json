@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "start": "npm run build && tsx src/server/main.ts",
+    "start": "npm run build && node dist/server.mjs",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc --noEmit",

@@ -51,3 +51,17 @@ for (const page of pages) {
   console.log(`dist/${page.name}.html  ${(html.length / 1024).toFixed(1)} kB  (${(gzipSync(html).length / 1024).toFixed(1)} kB gzip, of which script ${(js.length / 1024).toFixed(1)} kB)`);
 }
 writeFileSync('dist/manifest.json', JSON.stringify(manifest, null, 2));
+
+// The server as one file with its dependencies inside, so a container needs Node and dist/ only.
+await build({
+  entryPoints: ['src/server/main.ts'],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  outfile: 'dist/server.mjs',
+  legalComments: 'none',
+  // Some dependencies still call require(); give the ES module one.
+  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+});
+console.log('dist/server.mjs  the server, bundled');
