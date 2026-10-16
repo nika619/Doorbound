@@ -420,16 +420,16 @@ function structure() {
   $('when').hidden = !hasDep;
   $('empty').hidden = hasDep;
   $('ghost').hidden = !hasDep;
-  setText($('eyebrow'), hasDep ? 'DEPARTURES · TODAY' : 'DEPARTURES');
+  setText($('eyebrow'), hasDep ? 'DOORBOUND · TODAY' : 'DOORBOUND');
   if (dep) accent($('title'), 'The ', dep.name.toLowerCase());
-  else accent($('title'), people.length ? 'The ' : '', people.length ? 'next departure' : 'Departures');
+  else accent($('title'), people.length ? 'The ' : '', people.length ? 'next departure' : 'Doorbound');
   if (people.length) accent($('emptyBig'), 'Ready when ', 'you are', '.');
   else accent($('emptyBig'), 'Tell Alexa your ', 'mornings', '.');
   setText(
     $('emptySay'),
     people.length
       ? 'Say: "Alexa, start the school run. We leave at 7:40."'
-      : 'For example: "Alexa, Isha showers for 8 minutes, then gets dressed for 6, then has breakfast." Departures learns how long things really take, and keeps everyone on time.',
+      : 'For example: "Alexa, Isha showers for 8 minutes, then gets dressed for 6, then has breakfast." Doorbound learns how long things really take, and keeps everyone on time.',
   );
 
   fit(Math.max(1, dep?.lanes.length ?? people.length));
@@ -677,7 +677,7 @@ const announce = (text: string) => setText($('live'), text);
 function cardView() {
   const dep = board?.departure;
   const t = now();
-  setText($('cardEyebrow'), dep ? `DEPARTURES · ${dep.name.toUpperCase()}` : 'DEPARTURES');
+  setText($('cardEyebrow'), dep ? `DOORBOUND · ${dep.name.toUpperCase()}` : 'DOORBOUND');
   const line = $('cardLine');
   if (!dep) {
     accent(line, board?.people?.length ? 'No departure ' : 'Tell Alexa your ', board?.people?.length ? 'yet' : 'mornings');
