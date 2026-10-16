@@ -36,6 +36,8 @@ test('the demo morning, as Alexa says it', async () => {
   assert.match(undo.text, /^Back to the old plan\. Isha is running late, at \d+%\. Leave at 7:49, or at 7:5\d to be sure\.$/);
   const status = await say(15, 'departure_status');
   assert.ok(!status.error && status.board!.rev > start.board!.rev);
+  const tomorrow = await say(15, 'plan_tomorrow', { leaveAt: '07:49' });
+  assert.match(tomorrow.text, /^To leave at 7:49 with an 85% chance of everyone making it: Isha by \d+:\d\d, \w+ by \d+:\d\d and \w+ by \d+:\d\d\. Shall I set alarms for those times\?$/);
 
   const nobody = await say(15, 'step_done', { person: 'Zed' });
   assert.ok(nobody.error);

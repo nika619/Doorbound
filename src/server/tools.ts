@@ -6,6 +6,7 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@model
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { readings, reading, recordPace, rhoOf } from '../core/pace.ts';
+import { planStarts } from '../core/tomorrow.ts';
 import { currentIndex, currentRemaining, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
@@ -405,6 +406,29 @@ export function buildServer(ctx: Ctx): McpServer {
       const found = board(ctx).insights ?? [];
       if (!found.length) return say(ctx, 'Nothing surprising yet. After three or four mornings I can tell you how long things really take.');
       return say(ctx, found.map((i) => `${i.person}'s ${i.step.toLowerCase()} takes about ${minutes(i.learnedSec)}, not ${minutes(i.statedSec)}.`).join(' '));
+    },
+  );
+
+  registerAppTool(
+    server,
+    'plan_tomorrow',
+    {
+      title: 'When everyone has to start',
+      description:
+        'Use the evening before, when the customer asks when people need to get up or start, for example "we leave at 7:40 tomorrow, when should everyone be up?". Works back from the departure time to the latest time each person can start their routine and still give the household an 85% chance of leaving on time together, from how long their steps really take. Changes nothing. Offer to set an alarm for each person at their time.',
+      inputSchema: z.object({ leaveAt }),
+      annotations: { readOnlyHint: true },
+      ...out,
+      _meta: { ui },
+    },
+    async ({ leaveAt: at }) => {
+      const now = ctx.now();
+      let gateMs = gateFrom(at, now);
+      if (gateMs <= now) gateMs += 86_400_000; // the next time it is that o'clock
+      const { starts } = planStarts(ctx.store.household, ctx.store.history, gateMs, rhoOf(ctx.store.pace));
+      if (!starts.length) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
+      const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} by ${clock(s.startMs)}`);
+      return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it: ${list(named)}. Shall I set alarms for those times?`);
     },
   );
 
