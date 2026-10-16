@@ -7,6 +7,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { readings, reading, recordPace, rhoOf } from '../core/pace.ts';
 import { planStarts } from '../core/tomorrow.ts';
+import { honesty, noteForecasts, settle } from '../core/score.ts';
 import { currentIndex, currentRemaining, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
@@ -158,14 +159,22 @@ function noOne(ctx: Ctx, who: string) {
 }
 const NO_DEPARTURE = 'There is no departure running. Say, for example, start the school run, leave at 7:40.';
 
-/** Commit a new departure: re-plan if anyone is late, persist, audit. Returns whether a re-route happened. */
-function commit(ctx: Ctx, tool: string, dep: Departure | null, person?: string): boolean {
+/**
+ * Commit a new departure: re-plan if anyone is late, score what can be scored, note the chances of the
+ * people in `note`, persist, audit. Returns whether a re-route happened.
+ */
+function commit(ctx: Ctx, tool: string, dep: Departure | null, person?: string, note?: string[]): boolean {
+  const now = ctx.now();
+  const prev = ctx.store.departure;
+  // A departure ended or replaced: what it said about people still out is settled now.
+  if (prev && (!dep || dep.startedAtMs !== prev.startedAtMs)) settle(prev, now, ctx.store.scores, true);
   let next = dep;
   let rerouted = false;
   if (next) {
-    const fixed = reroute(next, ctx.store.household, ctx.store.history, ctx.now());
+    const fixed = reroute(next, ctx.store.household, ctx.store.history, now);
     rerouted = fixed !== next;
-    next = fixed;
+    next = settle(fixed, now, ctx.store.scores);
+    if (note) next = noteForecasts(next, now, note);
   }
   ctx.store.departure = next;
   ctx.store.touch();
@@ -259,7 +268,7 @@ export function buildServer(ctx: Ctx): McpServer {
       if (gateMs <= now) return refuse(`${at} has already passed today. Say a later time.`);
       if (gateMs - now > 6 * 3_600_000) return refuse('That is more than six hours away. Start the departure closer to the time.');
       const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rhoOf(ctx.store.pace));
-      const rerouted = commit(ctx, 'start_departure', dep);
+      const rerouted = commit(ctx, 'start_departure', dep, undefined, hh.people.map((p) => p.id));
       return say(ctx, `${dep.name} started. ${summary(ctx, ctx.store.departure!, rerouted)}`);
     },
   );
@@ -289,7 +298,7 @@ export function buildServer(ctx: Ctx): McpServer {
         record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
         if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds));
       }
-      const rerouted = commit(ctx, 'step_done', r.dep, p.id);
+      const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
       const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
       const pct = Math.round(Math.abs(next.pace) * 100);
       const pace = !next.current || pct < 15 ? '' : next.pace > 0 ? ` ${p.name} is running about ${pct}% slow this morning, so I've planned the rest longer.` : ` ${p.name} is about ${pct}% quicker than usual this morning.`;
@@ -429,6 +438,27 @@ export function buildServer(ctx: Ctx): McpServer {
       if (!starts.length) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
       const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} by ${clock(s.startMs)}`);
       return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it: ${list(named)}. Shall I set alarms for those times?`);
+    },
+  );
+
+  registerAppTool(
+    server,
+    'how_accurate',
+    {
+      title: 'How honest the chances have been',
+      description: 'Use when the customer asks whether the chances can be trusted, or how accurate Doorbound has been. Every chance it gave (at the start, and after each finished step) is checked against whether that person made the gate; this compares what it said with what happened in this household. Changes nothing.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+      ...out,
+      _meta: { ui },
+    },
+    async () => {
+      const { n, bands } = honesty(ctx.store.scores);
+      if (n < 10) return say(ctx, `I've checked ${n === 0 ? 'none' : `only ${n}`} of my chances against what really happened so far. Ask me again after a few more mornings.`);
+      const labels = ['under 50%', '50 to 80%', '80% or more'];
+      const parts = bands.flatMap((b, i) => (b.n < 5 ? [] : [`when I said ${labels[i]} (${pct(b.said)} on average), you made it ${Math.round(b.happened * b.n)} times out of ${b.n}`]));
+      if (!parts.length) return say(ctx, `I've checked ${n} chances, but not enough of any one kind to say yet. Ask me again after a few more mornings.`);
+      return say(ctx, `I've checked ${n} of my chances against what happened. ${parts.join('; ').replace(/^w/, 'W')}.`);
     },
   );
 
