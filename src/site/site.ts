@@ -3,7 +3,7 @@
 // same core the server runs; the boards on it replay the demo morning in the browser.
 
 import Lenis from 'lenis';
-import { applyChanges, project, stillGoing, type Change, type Departure } from '../core/departure.ts';
+import { applyChanges, laneTimeline, project, stillGoing, type Change, type Departure } from '../core/departure.ts';
 import { DEMO_MORNING, demoStep, household, learnedHistory } from '../core/fixtures.ts';
 import { findReroute } from '../core/reroute.ts';
 import { cdf, moments, posterior, sum, type LogNormal } from '../core/stats.ts';
@@ -426,6 +426,105 @@ const maths: Draw = (ctx, w, h, p) => {
 };
 
 /** 04: her chance falls; the search tries the gentlest fixes; the cheapest that works wins. */
+// 04: today's pace. Isha's real demo morning at 7:33, just after her 21-minute shower: her steps as the
+// plan stood (steps unrelated) and at today's pace, then calibration with and without the pace.
+const PACE_AT = T0 + 21 * MIN;
+let paceDep: Departure | null = null;
+{
+  const h = learnedHistory();
+  for (const e of DEMO_MORNING) if (e.at <= 21) paceDep = demoStep(paceDep, e.act, T0 + e.at * MIN, h);
+}
+const ishaLane = paceDep!.lanes[1];
+const asPlanned = laneTimeline(ishaLane, paceDep!.gateMs, PACE_AT, 0);
+const atPace = laneTimeline(ishaLane, paceDep!.gateMs, PACE_AT, paceDep!.rho);
+const paceNow = Math.round(project(paceDep!, PACE_AT)[1].pace * 20) * 5;
+// [said, happened] per tenth of chance, on 40,000 simulated mornings looked at mid-step (pace.test.ts's
+// simulation, seed 7): with today's pace, and with steps taken as unrelated.
+const CAL_PACE = [[0.022, 0.023], [0.146, 0.146], [0.248, 0.249], [0.349, 0.342], [0.45, 0.464], [0.55, 0.537], [0.652, 0.635], [0.75, 0.754], [0.847, 0.849], [0.976, 0.977]];
+const CAL_UNRELATED = [[0.023, 0.042], [0.147, 0.218], [0.248, 0.286], [0.349, 0.39], [0.45, 0.461], [0.551, 0.548], [0.651, 0.622], [0.753, 0.698], [0.853, 0.827], [0.965, 0.963]];
+
+const pace: Draw = (ctx, w, h, p) => {
+  const m = w * 0.04;
+  // beats 1-2: her row, then the rest of it stretching to today's pace
+  const aRow = 1 - seg(p, 0.6, 0.68);
+  if (aRow > 0) {
+    ctx.globalAlpha = aRow;
+    const end = paceDep!.gateMs + 4 * MIN;
+    const X = (ms: number) => m + ((ms - T0) / (end - T0)) * (w - 2 * m);
+    const y = h * 0.44;
+    const bh = Math.min(64, h * 0.09);
+    const reveal = expo(seg(p, 0.02, 0.18));
+    const stretch = expo(seg(p, 0.4, 0.56));
+    label(ctx, 'Isha · today, 7:33', m, y - 28, C.dim, 15);
+    if (stretch > 0) {
+      // Where her next steps stood before the pace came in, as faint outlines, so the stretch shows.
+      ctx.globalAlpha = aRow * stretch * 0.8;
+      ctx.setLineDash([4, 5]);
+      ctx.strokeStyle = C.faint;
+      for (const b of asPlanned) if (b.state === 'todo' || b.state === 'current') ctx.strokeRect(X(b.startMs), y - 6, X(b.endMs) - X(b.startMs) - 3, bh + 12);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = aRow;
+    }
+    asPlanned.forEach((b, i) => {
+      if (b.state === 'later') return;
+      const a = atPace[i];
+      const x = X(mix(b.startMs, a.startMs, stretch));
+      const bw = (X(mix(b.endMs, a.endMs, stretch)) - x) * reveal;
+      const mins = Math.round((mix(b.endMs, a.endMs, stretch) - mix(b.startMs, a.startMs, stretch)) / MIN);
+      const done = b.state === 'done';
+      block(ctx, x, y, Math.max(2, bw - 3), bh, done ? '#3a2a12' : C.cell, done ? C.amber : stretch > 0.02 ? C.amber : '#3a352d', bw > 70 ? `${b.name} · ${mins}` : '');
+    });
+    const gx = X(paceDep!.gateMs);
+    ctx.fillStyle = C.amber;
+    ctx.fillRect(gx, y - 18, 2, bh + 36);
+    label(ctx, 'gate 7:49', gx + 8, y - 16, C.amber, 13);
+    if (stretch > 0) {
+      ctx.globalAlpha = aRow * stretch;
+      label(ctx, `SLOW TODAY +${paceNow}%`, m, y + bh + 34, C.amber, 16);
+      label(ctx, 'her next steps, planned at today’s pace', m, y + bh + 58, C.dim, 14);
+    }
+  }
+  // beat 3: calibration, said against happened
+  const aCal = seg(p, 0.66, 0.74);
+  if (aCal > 0) {
+    ctx.globalAlpha = aCal;
+    const s = Math.min(h * 0.66, w * 0.62);
+    const bx = (w - s) / 2;
+    const by = (h - s) / 2 + 6;
+    ctx.strokeStyle = C.line;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, s, s);
+    ctx.setLineDash([5, 6]);
+    ctx.strokeStyle = C.faint;
+    ctx.beginPath();
+    ctx.moveTo(bx, by + s);
+    ctx.lineTo(bx + s, by);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    label(ctx, 'what it said →', bx + s, by + s + 22, C.dim, 13, 'right');
+    label(ctx, '↑ what happened', bx, by - 12, C.dim, 13);
+    const line = (pts: number[][], color: string, prog: number, name: string, ly: number) => {
+      if (prog <= 0) return;
+      const n = Math.max(1, Math.ceil(prog * pts.length));
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      pts.slice(0, n).forEach(([sx, hy], i) => (i ? ctx.lineTo(bx + sx * s, by + s - hy * s) : ctx.moveTo(bx + sx * s, by + s - hy * s)));
+      ctx.stroke();
+      for (const [sx, hy] of pts.slice(0, n)) {
+        ctx.beginPath();
+        ctx.arc(bx + sx * s, by + s - hy * s, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      label(ctx, name, bx + s - 12, by + s - ly, color, s < 360 ? 12 : 14, 'right'); // bottom right: below the diagonal, nothing is drawn there
+    };
+    line(CAL_UNRELATED, C.late, expo(seg(p, 0.72, 0.84)), s < 360 ? 'unrelated: 2.44%' : 'steps unrelated: 2.44% off', 42);
+    line(CAL_PACE, C.amber, expo(seg(p, 0.82, 0.95)), s < 360 ? 'pace: 0.39%' : 'today’s pace: 0.39% off', 18);
+  }
+  ctx.globalAlpha = 1;
+};
+
 const replan: Draw = (ctx, w, h, p) => {
   const m = w * 0.04;
   const narrow = w < 640; // phones: the gauge on top, the options under it
@@ -502,7 +601,7 @@ interface Story {
   p: number;
   beat: number;
 }
-const scenes: Record<string, Draw> = { problem, maths, replan };
+const scenes: Record<string, Draw> = { problem, maths, pace, replan };
 const stories: Story[] = $$('[data-story]').map((el) => {
   const canvas = $<HTMLCanvasElement>('canvas', el);
   return { el, canvas, ctx: canvas.getContext('2d')!, beats: $$('.beat', el), count: $('.count b', el), draw: scenes[el.dataset.story!], top: 0, height: 1, p: -1, beat: -1 };
