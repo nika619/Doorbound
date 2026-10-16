@@ -64,8 +64,9 @@ On a Windows 11 laptop, Node 24 (`tsx scripts/bench.ts`, and `tsx scripts/bench.
 | The board's work each second (3 people) | 4 µs | 8 µs | |
 | Board poll under load: 300 screens + 30 speakers for 20 s | 0.8 ms | 2.9 ms | 70 ms |
 | Tool call under the same load | 3.0 ms | 4.3 ms | 5.8 ms |
+| Memory of one running server (one household) | about 80 MB | | |
 
-Zero errors in the load test. Pushed to 2,000 screens, one process served about 1,800 requests a second (load generator on the same laptop) before latency rose, still with no errors. A household needs a few requests a second. An unchanged poll is answered with an empty 204; the board page is one 79 kB (gzipped) file with no external requests.
+Zero errors in the load test. Pushed to 2,000 screens, one process served about 1,800 requests a second (load generator on the same laptop) before latency rose, still with no errors. A household needs a few requests a second. An unchanged poll is answered with an empty 204; the board page is one 84 kB (gzipped) file with no external requests, and the story page, with the whole board inside it, is 174 kB.
 
 ## Run it
 
