@@ -10,7 +10,7 @@
 :root {
   --page: #090807; --board: #0d0c0a; --cell: #1c1a17; --cell-blank: #141310; --raise: #1d1b18; --rule: #26231f;
   --ink: #f3ede2; --dim: #8f887c; --faint: #5d574e; --amber: #ffb547; --go: #8fdcaa; --late: #ff6b4a;
-  --ease: cubic-bezier(.2, .8, .2, 1);
+  --ease: cubic-bezier(.16, 1, .3, 1); /* expo-out: everything that enters */
   --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif; --serif: 'Instrument Serif', Georgia, serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,7 +38,8 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
 .label .n { color: var(--amber); }
 .label .n::after { content: ''; display: inline-block; width: 34px; height: 2px; margin: 0 0 6px 14px; background: currentColor; vertical-align: middle; opacity: .7; }
 
-.head { display: grid; grid-template-columns: 1fr auto; align-items: end; padding-bottom: 22px; border-bottom: 2px solid var(--rule); }
+.head { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: end; padding-bottom: 22px; border-bottom: 2px solid var(--rule); }
+.hair { position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; transform-origin: 0 50%; transform: scaleX(0); background: var(--amber); transition: transform 1s linear; }
 .title { font: 700 104px/.9 var(--cond); margin-top: 18px; letter-spacing: -.005em; }
 .title em { font-size: 1.12em; color: var(--amber); }
 .when { display: flex; align-items: end; gap: 52px; }
@@ -135,7 +136,9 @@ button.done:disabled { opacity: .25; cursor: default; }
 .undo, .sound { height: 56px; padding: 0 22px; border-radius: 12px; border: 2px solid #3a362f; background: transparent; font: 700 21px/1 var(--cond); letter-spacing: .14em; }
 .undo:hover, .undo:focus-visible, .sound:hover, .sound:focus-visible { border-color: var(--ink); outline: none; }
 .sound[aria-pressed='false'] { color: var(--faint); }
-@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(18px) scale(.98); } }
+.w { display: inline-block; animation: blurIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
+@keyframes blurIn { from { opacity: 0; filter: blur(8px); transform: translateY(20px); } }
 
 /* fixed rows so a hidden section never hands its space to the footer */
 .head { grid-row: 1; } #table { grid-row: 2; } .runway, .empty { grid-row: 3; } .foot { grid-row: 4; }
@@ -161,8 +164,8 @@ button.done:disabled { opacity: .25; cursor: default; }
 .card .open:hover, .card .open:focus-visible { border-color: var(--ink); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ch.in, .reroute, .row, .msg .dot { animation: none; }
-  .blk, .meter i, .band { transition: none; }
+  .ch.in, .reroute, .row, .msg .dot, .w { animation: none; }
+  .blk, .meter i, .band, .hair { transition: none; }
 }
 </style>
 </head>
@@ -174,6 +177,7 @@ button.done:disabled { opacity: .25; cursor: default; }
       <div class="label"><span class="n">01</span><span id="eyebrow">DEPARTURES</span></div>
       <h1 class="title" id="title">Departures</h1>
     </div>
+    <div class="hair" id="hair" aria-hidden="true"></div>
     <div class="when" id="when" hidden>
       <div class="stat"><div class="k" id="gateK">LEAVE</div><div class="v" id="gate">7:40</div></div>
       <div class="stat"><div class="k">IN</div><div class="v amber" id="left">0 MIN</div></div>

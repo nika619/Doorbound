@@ -41,12 +41,25 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 const setText = (e: HTMLElement, t: string) => {
   if (e.textContent !== t) e.textContent = t;
 };
-/** Plain words with one italic serif accent, the board's voice: "The <em>school run</em>". */
+/** Append `text` word by word, each word revealed `from` steps of 60 ms later than the first. Returns the next step. */
+function words(into: HTMLElement, text: string, from = 0): number {
+  for (const part of text.split(/(\s+)/)) {
+    if (!part) continue;
+    if (/^\s+$/.test(part)) into.append(part);
+    else el('span', 'w', into, part).style.setProperty('--i', String(from++));
+  }
+  return from;
+}
+/** Plain words with one italic serif accent, the board's voice: "The <em>school run</em>". Revealed when it changes. */
 function accent(e: HTMLElement, before: string, em: string, after = '') {
   const key = `${before}|${em}|${after}`;
   if (e.dataset.key === key) return;
   e.dataset.key = key;
-  e.replaceChildren(before, el('em', '', undefined, em), after);
+  const m = el('em', '');
+  e.replaceChildren();
+  const i = words(e, before);
+  e.append(m);
+  words(e, after, words(m, em, i));
 }
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const hhmm = (ms: number) => {
@@ -451,9 +464,29 @@ function second(animate = false) {
   // Everyone on time: the chance that the whole household makes the gate, coloured by whoever is worst off.
   const allTone = views.some((v) => v.status === 'late') ? 'late' : views.some((v) => v.status === 'tight') ? 'tight' : 'ok';
   const allEl = $('all');
-  setText(allEl, views.every((v) => v.status === 'ready') ? 'ALL SET' : pct(everyoneOnTime(views)));
+  showAll(allEl, views.every((v) => v.status === 'ready') ? null : Math.min(99, Math.max(1, Math.round(everyoneOnTime(views) * 100))));
   if (allEl.dataset.tone !== allTone) allEl.dataset.tone = allTone;
+  $('hair').style.transform = `scaleX(${Math.min(1, Math.max(0, (t - dep.startedAtMs) / (dep.gateMs - dep.startedAtMs))).toFixed(4)})`;
   footer(dep, late, views.every((v) => v.status === 'ready'));
+}
+
+let allShown = NaN;
+let allRaf = 0;
+/** The household's chance; a jump of 3 points or more counts up to the new value so the eye catches it. */
+function showAll(e: HTMLElement, n: number | null) {
+  if (n === allShown) return;
+  cancelAnimationFrame(allRaf);
+  const from = allShown;
+  allShown = n ?? NaN;
+  if (n === null) return setText(e, 'ALL SET');
+  if (!Number.isFinite(from) || Math.abs(n - from) < 3 || reduced.matches) return setText(e, `${n}%`);
+  const t0 = performance.now();
+  const step = (t: number) => {
+    const k = Math.min(1, (t - t0) / 1200);
+    setText(e, `${k === 1 ? n : Math.round(from + (n - from) * (1 - 2 ** (-10 * k)))}%`);
+    if (k < 1) allRaf = requestAnimationFrame(step);
+  };
+  allRaf = requestAnimationFrame(step);
 }
 
 let lastLive = '';
@@ -473,10 +506,11 @@ function footer(dep: Dep, late: string[], allReady: boolean) {
       card = el('div', `reroute${rr.stillLateSec ? ' stuck' : ''}`);
       card.dataset.key = key;
       card.dataset.at = String(rr.atMs);
-      el('div', 'k', card, rr.stillLateSec ? 'Still late.' : 'Re-routed.');
+      const next = words(el('div', 'k', card), rr.stillLateSec ? 'Still late.' : 'Re-routed.') + 1;
       const chips = el('div', 'chips', card);
-      for (const c of rr.changes) el('span', '', chips, describe(c));
-      if (rr.stillLateSec) el('span', '', chips, `Leave at ${hhmm(dep.gateMs + Math.ceil(rr.stillLateSec / 60) * 60_000)} to make it`);
+      const lines = rr.changes.map(describe);
+      if (rr.stillLateSec) lines.push(`Leave at ${hhmm(dep.gateMs + Math.ceil(rr.stillLateSec / 60) * 60_000)} to make it`);
+      lines.forEach((line, i) => el('span', 'w', chips, line).style.setProperty('--i', String(next + i)));
       if (rr.canUndo && bridge) {
         const b = el('button', 'undo', card, 'UNDO') as HTMLButtonElement;
         b.type = 'button';
