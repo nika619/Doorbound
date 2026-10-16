@@ -5,6 +5,7 @@
 
 import { Client, StreamableHTTPClientTransport, type CallToolResult } from '@modelcontextprotocol/client';
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge';
+import { DEMO_MORNING } from '../core/fixtures.ts';
 import { route } from './router.ts';
 
 const BOARD_URI = 'ui://departures/board.html';
@@ -235,21 +236,7 @@ else {
 }
 
 // ---------- the demo morning: the design-frame story, on the server's clock ----------
-const DEMO: [number, string | null, string][] = [
-  [0, 'Mum', 'Alexa, start the school run. We leave in 36 minutes.'],
-  [8.1, 'Dad', "I'm done with the lunches."],
-  [12.1, 'Aarav', "I'm done with breakfast."],
-  [14.5, 'Mum', "Alexa, Isha's still in the shower. Eight more minutes, she says."],
-  [16.0, 'Mum', 'How are we doing?'],
-  [16.4, 'Aarav', "I'm done."],
-  [18.8, 'Dad', "I'm done."],
-  [21.0, 'Isha', "I'm done."],
-  [21.6, 'Aarav', "I'm done."],
-  [22.0, 'Dad', "I'm done."],
-  [25.0, 'Dad', "I'm done."],
-  [27.4, 'Isha', "I'm done."],
-  [29.6, 'Isha', "I'm done."],
-];
+const DEMO = DEMO_MORNING.map((e) => [e.at, e.who, e.say] as const);
 $('play').addEventListener('click', async () => {
   const play = $<HTMLButtonElement>('play');
   play.disabled = true;

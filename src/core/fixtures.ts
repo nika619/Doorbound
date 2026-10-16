@@ -1,6 +1,7 @@
 // The household from the design frame, and reproducible randomness, shared by the tests.
-import { markDone, startDeparture, stillGoing, type Household, type PersonDef } from './departure.ts';
+import { markDone, startDeparture, stillGoing, type Departure, type Household, type PersonDef } from './departure.ts';
 import { record, type History } from './learn.ts';
+import { reroute } from './reroute.ts';
 
 export const household: Household = {
   people: [
@@ -18,6 +19,41 @@ export const household: Household = {
     { id: 'dad', name: 'Dad', steps: [{ id: 'lunches', name: 'Pack lunches', statedSec: 480 }, { id: 'dishwasher', name: 'Unload dishwasher', statedSec: 600, canWait: true }, { id: 'car', name: 'Start the car', statedSec: 180 }] },
   ],
 };
+/** What a demo line does. */
+export type DemoAct = { start: number } | { done: string } | { still: string; minutes: number } | { status: true };
+/**
+ * The demo morning, minute by minute: who says what and what it does. The simulator speaks it, the
+ * board's replay acts it out, and the screenshot script plays it against a server. Timings come from
+ * running these events through the core: Isha's shower overruns at 14.5 and the re-plan holds.
+ */
+export const DEMO_MORNING: { at: number; who: string; say: string; act: DemoAct }[] = [
+  { at: 0, who: 'Mum', say: 'Alexa, start the school run. We leave in 36 minutes.', act: { start: 36 } },
+  { at: 8.1, who: 'Dad', say: "I'm done with the lunches.", act: { done: 'dad' } },
+  { at: 12.1, who: 'Aarav', say: "I'm done with breakfast.", act: { done: 'aarav' } },
+  { at: 14.5, who: 'Mum', say: "Alexa, Isha's still in the shower. Eight more minutes, she says.", act: { still: 'isha', minutes: 8 } },
+  { at: 16.0, who: 'Mum', say: 'How are we doing?', act: { status: true } },
+  { at: 16.4, who: 'Aarav', say: "I'm done.", act: { done: 'aarav' } },
+  { at: 18.8, who: 'Dad', say: "I'm done.", act: { done: 'dad' } },
+  { at: 21.0, who: 'Isha', say: "I'm done.", act: { done: 'isha' } },
+  { at: 21.6, who: 'Aarav', say: "I'm done.", act: { done: 'aarav' } },
+  { at: 22.0, who: 'Dad', say: "I'm done.", act: { done: 'dad' } },
+  { at: 25.0, who: 'Dad', say: "I'm done.", act: { done: 'dad' } },
+  { at: 27.4, who: 'Isha', say: "I'm done.", act: { done: 'isha' } },
+  { at: 29.6, who: 'Isha', say: "I'm done.", act: { done: 'isha' } },
+];
+
+/** One demo line acted out at `at`, as the server would: the change, what it teaches, then a re-plan. */
+export function demoStep(dep: Departure | null, act: DemoAct, at: number, h: History): Departure | null {
+  if ('start' in act) dep = startDeparture(household, h, 'School run', at + act.start * 60_000, at);
+  else if (dep && 'done' in act) {
+    const r = markDone(dep, act.done, at);
+    if (r?.sample) record(h, r.sample.personId, r.sample.stepId, r.sample.seconds);
+    dep = r?.dep ?? dep;
+  } else if (dep && 'still' in act) dep = stillGoing(dep, act.still, act.minutes * 60, at) ?? dep;
+  else return dep; // a question changes nothing
+  return dep && reroute(dep, household, h, at);
+}
+
 export function learnedHistory(): History {
   const h: History = new Map();
   for (let i = 0; i < 5; i++) {
