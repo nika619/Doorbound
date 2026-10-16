@@ -5,6 +5,7 @@
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
+import { readings, reading, recordPace, rhoOf } from '../core/pace.ts';
 import { currentIndex, currentRemaining, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
@@ -39,6 +40,7 @@ const boardSchema = z.object({
       startedAtMs: z.number(),
       rev: z.number(),
       lanes: z.array(laneSchema),
+      rho: z.number(),
       reroute: z.object({ atMs: z.number(), changes: z.array(changeSchema), stillLateSec: z.number(), canUndo: z.boolean() }).nullable(),
     })
     .nullable()
@@ -255,7 +257,7 @@ export function buildServer(ctx: Ctx): McpServer {
       const gateMs = gateFrom(at, now);
       if (gateMs <= now) return refuse(`${at} has already passed today. Say a later time.`);
       if (gateMs - now > 6 * 3_600_000) return refuse('That is more than six hours away. Start the departure closer to the time.');
-      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now);
+      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rhoOf(ctx.store.pace));
       const rerouted = commit(ctx, 'start_departure', dep);
       return say(ctx, `${dep.name} started. ${summary(ctx, ctx.store.departure!, rerouted)}`);
     },
@@ -277,13 +279,20 @@ export function buildServer(ctx: Ctx): McpServer {
       const p = findPerson(ctx, person);
       if (!p) return noOne(ctx, person);
       const lane = dep.lanes.find((l) => l.personId === p.id);
-      const finished = lane?.tasks.find((t) => t.state === 'todo')?.name;
+      const task = lane?.tasks.find((t) => t.state === 'todo');
+      const finished = task?.name;
+      const earlier = lane ? readings(lane) : [];
       const r = markDone(dep, p.id, ctx.now());
       if (!r) return refuse(`${p.name} has nothing left to do. ${p.name} is ready to go.`);
-      if (r.sample) record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
+      if (r.sample) {
+        record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
+        if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds));
+      }
       const rerouted = commit(ctx, 'step_done', r.dep, p.id);
       const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
-      const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}.` : `${p.name} is ready to go.`;
+      const pct = Math.round(Math.abs(next.pace) * 100);
+      const pace = !next.current || pct < 15 ? '' : next.pace > 0 ? ` ${p.name} is running about ${pct}% slow this morning, so I've planned the rest longer.` : ` ${p.name} is about ${pct}% quicker than usual this morning.`;
+      const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}.${pace}` : `${p.name} is ready to go.`;
       return say(ctx, rerouted ? `${finished} done. ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done. ${lead}`);
     },
   );
@@ -311,7 +320,7 @@ export function buildServer(ctx: Ctx): McpServer {
       const idx = lane ? currentIndex(lane) : -1;
       if (!lane || idx < 0) return refuse(`${p.name} has nothing left to do.`);
       // Nobody said how long: plan for the long end (the TARGET quantile) of what this step usually still needs.
-      const extra = Math.round(extraMinutes !== undefined ? extraMinutes * 60 : Math.max(120, quantile(sum([currentRemaining(lane, idx, now)])!, TARGET)));
+      const extra = Math.round(extraMinutes !== undefined ? extraMinutes * 60 : Math.max(120, quantile(sum([currentRemaining(lane, idx, now, dep.rho)])!, TARGET)));
       const rerouted = commit(ctx, 'still_going', stillGoing(dep, p.id, extra, now), p.id);
       return say(ctx, rerouted ? summary(ctx, ctx.store.departure!, true) : `Noted, ${minutes(extra)} more for ${p.name}. ${summary(ctx, ctx.store.departure!, false)}`);
     },

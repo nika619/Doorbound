@@ -14,10 +14,10 @@ const onTime = (dep: Departure, now: number) => project(dep, now).every((v) => v
 /** The demo morning, as the server runs it: every event is followed by a re-plan. */
 function demoMorning(): { dep: Departure; h: History } {
   const h = learnedHistory();
-  let dep = reroute(startDeparture(household, h, 'School run', at(36), at(0)), household, h, at(0));
+  let dep = reroute(startDeparture(household, h, 'School run', at(37), at(0)), household, h, at(0));
   dep = reroute(markDone(dep, 'dad', at(8.1))!.dep, household, h, at(8.1));
   dep = reroute(markDone(dep, 'aarav', at(12.1))!.dep, household, h, at(12.1));
-  return { dep: stillGoing(dep, 'isha', 8 * 60, at(14.5))!, h }; // "Isha's still in the shower. Eight more minutes."
+  return { dep: stillGoing(dep, 'isha', 9 * 60, at(14.5))!, h }; // "Isha's still in the shower. Nine more minutes."
 }
 
 test('the demo morning: Isha runs over, breakfast goes to-go and Dad packs her bag', () => {
@@ -63,7 +63,7 @@ test('a helper who has finished everything starts the handed task now, not when 
     ],
   };
   const h: History = new Map();
-  let dep = startDeparture(hh, h, 'run', at(20), at(0));
+  let dep = startDeparture(hh, h, 'run', at(20), at(0), 0); // rho 0: this checks timing, not pace
   dep = markDone(dep, 'a', at(2))!.dep; // A is free from minute 2
   dep = stillGoing(dep, 'b', 600, at(10))!;
   const fixed = reroute(dep, hh, h, at(10));

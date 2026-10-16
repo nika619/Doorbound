@@ -4,9 +4,11 @@
 //
 // Each step's duration is a log-normal learned from real mornings (stats.ts). A person's remaining
 // morning is a sum of those, so the board can say not just "ready at 7:38" but "ready by 7:38 with
-// 85% confidence, a 93% chance of making the gate".
+// 85% confidence, a 93% chance of making the gate". The steps of one person's morning share a pace
+// (pace.ts): each finished step says how today is going, and the rest of their morning moves with it.
 
 import { keyOf, type History } from './learn.ts';
+import { addPart, adjust, censor, paceFactor, paceOf, PARTS, RHO_PRIOR, total, type Pace } from './pace.ts';
 import { cdf, moments, posterior, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
 
 export interface StepDef {
@@ -87,6 +89,8 @@ export interface Departure {
   rev: number;
   lanes: Lane[];
   reroute: Reroute | null;
+  /** How strongly one person's steps run slow or fast together in this household (pace.ts). */
+  rho: number;
 }
 
 /** Plan so each person is ready by the gate with at least this probability. */
@@ -100,13 +104,13 @@ const EXTEND_SIGMA = 0.25;
 export const durationOf = (history: History, personId: string, stepId: string, statedSec: number): LogNormal =>
   posterior(statedSec, history.get(keyOf(personId, stepId)));
 
-export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number): Departure {
+export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number, rho = RHO_PRIOR): Departure {
   const lanes = household.people.map((p) => ({
     personId: p.id,
     startedAtMs: nowMs,
     tasks: p.steps.map((s) => ({ key: `${p.id}/${s.id}`, stepId: s.id, forPerson: p.id, name: s.name, state: 'todo' as const, ...durationOf(history, p.id, s.id, s.statedSec) })),
   }));
-  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null };
+  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho };
 }
 
 // ---------- reading a lane ----------
@@ -127,27 +131,60 @@ export function currentStartMs(lane: Lane, idx: number): number {
   return Math.max(start, lane.tasks[idx]?.notBeforeMs ?? start);
 }
 
-/** Time still to go on the current task, as mean and variance in seconds. */
-export function currentRemaining(lane: Lane, idx: number, nowMs: number): Moments {
+/** Time still to go on the current task, as mean and variance in seconds, at today's pace. */
+export function currentRemaining(lane: Lane, idx: number, nowMs: number, rho: number, pace = paceOf(lane, rho)): Moments {
   const t = lane.tasks[idx];
   if (t.extend) return remaining(t.extend, (nowMs - t.extend.fromMs) / 1000, GRACE_MS / 1000);
-  return remaining(t, (nowMs - currentStartMs(lane, idx)) / 1000, GRACE_MS / 1000);
+  return remaining(adjust(t, pace, rho), (nowMs - currentStartMs(lane, idx)) / 1000, GRACE_MS / 1000);
+}
+
+/** A step still to come, at today's pace. */
+export const stepMoments = (d: LogNormal, pace: Pace, rho: number) => moments(adjust(d, pace, rho));
+
+/** Today's pace for the steps still to come: the finished steps' readings, and how long the current one has run. */
+function paceAhead(lane: Lane, idx: number, nowMs: number, rho: number, before: Pace): Pace {
+  const t = lane.tasks[idx];
+  return idx < 0 || t.extend ? before : censor(before, t, rho, (nowMs - currentStartMs(lane, idx)) / 1000);
+}
+
+/**
+ * How strongly the rest of the step in progress moves with the pace, as the sigma a whole step would need
+ * for the same covariance with the steps after it: d E[rest | Z] / dZ over (mean sqrt(rho)), the delta
+ * method, exact for a step that has only just started. 0 when it is on someone's say-so ("still going").
+ */
+function loading(lane: Lane, idx: number, nowMs: number, rho: number, ahead: Pace, mean: number): number {
+  const t = lane.tasks[idx];
+  if (rho <= 0 || t.extend || mean <= 0) return 0;
+  const e = (nowMs - currentStartMs(lane, idx)) / 1000;
+  const at = (z: number) => remaining({ mu: t.mu + t.sigma * Math.sqrt(rho) * z, sigma: t.sigma * Math.sqrt(1 - rho) }, e, GRACE_MS / 1000).mean;
+  const h = 1e-3;
+  return Math.max(0, (at(ahead.z + h) - at(ahead.z - h)) / (2 * h) / (mean * Math.sqrt(rho)));
+}
+
+/**
+ * Everything this lane still has to do, from now, as the running sums of pace.ts, with today's pace for
+ * the steps to come and the covariance factor c it leaves. O(t).
+ */
+export function lanePart(lane: Lane, nowMs: number, rho: number): { acc: Float64Array; c: number; pace: Pace } {
+  const acc = new Float64Array(PARTS);
+  const before = paceOf(lane, rho);
+  const idx = currentIndex(lane);
+  const pace = paceAhead(lane, idx, nowMs, rho, before);
+  if (idx >= 0) {
+    const cur = currentRemaining(lane, idx, nowMs, rho, before); // exact as it is: X | X > elapsed under the readings
+    addPart(acc, cur, loading(lane, idx, nowMs, rho, pace, cur.mean));
+    for (let i = idx + 1; i < lane.tasks.length; i++) {
+      const t = lane.tasks[i];
+      if (t.state === 'todo') addPart(acc, stepMoments(t, pace, rho), t.sigma);
+    }
+  }
+  return { acc, c: rho * pace.v, pace };
 }
 
 /** Mean and variance of everything this lane still has to do, from now. O(t). */
-export function laneMoments(lane: Lane, nowMs: number): Moments {
-  const idx = currentIndex(lane);
-  if (idx < 0) return { mean: 0, variance: 0 };
-  const m = currentRemaining(lane, idx, nowMs);
-  let mean = m.mean;
-  let variance = m.variance;
-  for (let i = idx + 1; i < lane.tasks.length; i++) {
-    if (lane.tasks[i].state !== 'todo') continue;
-    const s = moments(lane.tasks[i]);
-    mean += s.mean;
-    variance += s.variance;
-  }
-  return { mean, variance };
+export function laneMoments(lane: Lane, nowMs: number, rho: number): Moments {
+  const { acc, c } = lanePart(lane, nowMs, rho);
+  return total(acc, c);
 }
 
 /** Probability that work with these moments, starting now, is done by the gate. */
@@ -175,17 +212,21 @@ export interface LaneView {
   status: Status;
   /** Gate minus the confident ready time, in seconds: negative means late. */
   slackSec: number;
+  /** Today's pace against a usual morning: 0.2 means this person's steps are running about 20% long. */
+  pace: number;
 }
 
 /** Where a person stands at `nowMs`. O(t). */
-export function projectLane(lane: Lane, gateMs: number, nowMs: number): LaneView {
+export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: number): LaneView {
   const idx = currentIndex(lane);
+  const { acc, c, pace: p } = lanePart(lane, nowMs, rho);
+  const pace = p.n ? paceFactor(p, rho, lane.tasks.reduce((a, t) => a + t.sigma, 0) / lane.tasks.length) : 0;
   if (idx < 0) {
     const last = lane.tasks.findLast((t) => t.state === 'done');
     const readyMs = last?.doneAtMs ?? lane.startedAtMs;
-    return { personId: lane.personId, current: null, next: null, currentStartMs: readyMs, readyMs, expectedMs: readyMs, earlyMs: readyMs, lateMs: readyMs, pOnTime: readyMs <= gateMs ? 1 : 0, status: 'ready', slackSec: Math.round((gateMs - readyMs) / 1000) };
+    return { personId: lane.personId, current: null, next: null, currentStartMs: readyMs, readyMs, expectedMs: readyMs, earlyMs: readyMs, lateMs: readyMs, pOnTime: readyMs <= gateMs ? 1 : 0, status: 'ready', slackSec: Math.round((gateMs - readyMs) / 1000), pace };
   }
-  const m = laneMoments(lane, nowMs);
+  const m = total(acc, c);
   const d = sum([m])!;
   const at = (p: number) => nowMs + quantile(d, p) * 1000;
   const next = lane.tasks.slice(idx + 1).find((t) => t.state === 'todo') ?? null;
@@ -204,14 +245,15 @@ export function projectLane(lane: Lane, gateMs: number, nowMs: number): LaneView
     pOnTime,
     status,
     slackSec: Math.round((gateMs - readyMs) / 1000),
+    pace,
   };
 }
 
 export function project(dep: Departure, nowMs: number): LaneView[] {
-  return dep.lanes.map((l) => projectLane(l, dep.gateMs, nowMs));
+  return dep.lanes.map((l) => projectLane(l, dep.gateMs, nowMs, dep.rho));
 }
 
-/** Chance that everyone makes the gate. People's mornings are taken as independent. */
+/** Chance that everyone makes the gate. Different people's mornings are taken as independent. */
 export const everyoneOnTime = (views: LaneView[]) => views.reduce((p, v) => p * v.pOnTime, 1);
 
 // ---------- events ----------
@@ -306,11 +348,13 @@ export interface Block {
 /**
  * Each task as a span of expected time, for drawing a lane: done steps where they really were, the
  * current one ending at its expected remaining time, the rest queued after it, and steps that wait
- * queued after the gate. Skipped steps are left out. O(t) for t tasks.
+ * queued after the gate, all at today's pace. Skipped steps are left out. O(t) for t tasks.
  */
-export function laneTimeline(lane: Lane, gateMs: number, nowMs: number): Block[] {
+export function laneTimeline(lane: Lane, gateMs: number, nowMs: number, rho: number): Block[] {
   const out: Block[] = [];
   const idx = currentIndex(lane);
+  const before = paceOf(lane, rho);
+  const pace = paceAhead(lane, idx, nowMs, rho, before);
   let cursor = lane.startedAtMs;
   let after = gateMs;
   lane.tasks.forEach((t, i) => {
@@ -321,16 +365,16 @@ export function laneTimeline(lane: Lane, gateMs: number, nowMs: number): Block[]
       cursor = Math.max(cursor, t.doneAtMs!);
     } else if (t.state === 'todo' && i === idx) {
       const startMs = currentStartMs(lane, idx);
-      const endMs = Math.max(startMs, nowMs) + currentRemaining(lane, idx, nowMs).mean * 1000;
+      const endMs = Math.max(startMs, nowMs) + currentRemaining(lane, idx, nowMs, rho, before).mean * 1000;
       const planned = startMs + quantile(t, TARGET) * 1000;
       out.push({ ...base, startMs, endMs, state: 'current', overrun: !!t.extend || nowMs > planned });
       cursor = endMs;
     } else if (t.state === 'todo') {
-      const ms = moments(t).mean * 1000;
+      const ms = stepMoments(t, pace, rho).mean * 1000;
       out.push({ ...base, startMs: cursor, endMs: cursor + ms, state: 'todo' });
       cursor += ms;
     } else if (t.state === 'later') {
-      const ms = moments(t).mean * 1000;
+      const ms = stepMoments(t, pace, rho).mean * 1000;
       out.push({ ...base, startMs: after, endMs: after + ms, state: 'later' });
       after += ms;
     }

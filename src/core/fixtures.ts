@@ -27,10 +27,10 @@ export type DemoAct = { start: number } | { done: string } | { still: string; mi
  * running these events through the core: Isha's shower overruns at 14.5 and the re-plan holds.
  */
 export const DEMO_MORNING: { at: number; who: string; say: string; act: DemoAct }[] = [
-  { at: 0, who: 'Mum', say: 'Alexa, start the school run. We leave in 36 minutes.', act: { start: 36 } },
+  { at: 0, who: 'Mum', say: 'Alexa, start the school run. We leave in 37 minutes.', act: { start: 37 } },
   { at: 8.1, who: 'Dad', say: "I'm done with the lunches.", act: { done: 'dad' } },
   { at: 12.1, who: 'Aarav', say: "I'm done with breakfast.", act: { done: 'aarav' } },
-  { at: 14.5, who: 'Mum', say: "Alexa, Isha's still in the shower. Eight more minutes, she says.", act: { still: 'isha', minutes: 8 } },
+  { at: 14.5, who: 'Mum', say: "Alexa, Isha's still in the shower. Nine more minutes, she says.", act: { still: 'isha', minutes: 9 } },
   { at: 16.0, who: 'Mum', say: 'How are we doing?', act: { status: true } },
   { at: 16.4, who: 'Aarav', say: "I'm done.", act: { done: 'aarav' } },
   { at: 18.8, who: 'Dad', say: "I'm done.", act: { done: 'dad' } },

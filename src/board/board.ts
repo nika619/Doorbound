@@ -20,6 +20,7 @@ interface Dep {
   startedAtMs: number;
   rev: number;
   lanes: Lane[];
+  rho: number;
   reroute: { atMs: number; changes: Change[]; stillLateSec: number; canUndo: boolean } | null;
 }
 interface Board {
@@ -462,8 +463,8 @@ function structure() {
 
   // Runway scale: fixed for the whole departure so nothing slides about. Wide enough for the late end of everyone's spread.
   const t = now();
-  const all = dep.lanes.flatMap((l) => laneTimeline(l, dep.gateMs, t));
-  const spread = dep.lanes.map((l) => projectLane(l, dep.gateMs, t).lateMs);
+  const all = dep.lanes.flatMap((l) => laneTimeline(l, dep.gateMs, t, dep.rho));
+  const spread = dep.lanes.map((l) => projectLane(l, dep.gateMs, t, dep.rho).lateMs);
   const x0 = Math.min(dep.startedAtMs, ...all.map((b) => b.startMs)) - 60_000;
   const x1 = Math.max(dep.gateMs + 8 * 60_000, ...all.map((b) => b.endMs), ...spread) + 60_000;
   const width = $('layer').clientWidth || 1646;
@@ -510,7 +511,7 @@ function second(animate = false) {
   const moved = new Set((dep.reroute?.changes ?? []).filter((c) => c.kind !== 'later').map((c) => c.taskKey));
   const waits = new Set((dep.reroute?.changes ?? []).filter((c) => c.kind === 'later').map((c) => c.taskKey));
   dep.lanes.forEach((lane, li) => {
-    const v = projectLane(lane, dep.gateMs, t);
+    const v = projectLane(lane, dep.gateMs, t, dep.rho);
     views.push(v);
     const r = rows.get(lane.personId);
     const [status, tone] = statusOf(v, dep, t);
@@ -524,7 +525,7 @@ function second(animate = false) {
       }
       r.status.set(status, tone);
       r.chance.set(v.status === 'ready' ? '' : pct(v.pOnTime), chanceTone, 'right');
-      drawCurve(r, v.current ? sum([laneMoments(lane, t)]) : null, (dep.gateMs - t) / 1000, chanceTone);
+      drawCurve(r, v.current ? sum([laneMoments(lane, t, dep.rho)]) : null, (dep.gateMs - t) / 1000, chanceTone);
       // A change of standing sweeps the row in its new colour, so the eye goes to it.
       if (r.tone && r.tone !== chanceTone && chanceTone !== 'done') sweep(r.li, chanceTone);
       r.tone = chanceTone;
@@ -550,7 +551,7 @@ function second(animate = false) {
       band.tick.style.transform = `translateX(${(v.readyMs - v.earlyMs) * scale.px - 1}px)`;
       if (band.e.dataset.tone !== chanceTone) band.e.dataset.tone = chanceTone;
     }
-    for (const b of laneTimeline(lane, dep.gateMs, t)) {
+    for (const b of laneTimeline(lane, dep.gateMs, t, dep.rho)) {
       seen.add(b.key);
       let blk = blocks.get(b.key);
       const x = (b.startMs - scale.x0) * scale.px;
@@ -688,7 +689,7 @@ function cardView() {
   const chips = $('cardChips');
   chips.replaceChildren();
   for (const lane of dep.lanes) {
-    const v = projectLane(lane, dep.gateMs, t);
+    const v = projectLane(lane, dep.gateMs, t, dep.rho);
     const [status, tone] = statusOf(v, dep, t);
     const c = el('span', 'chip', chips, `${nameOf(lane.personId).toUpperCase()} · ${v.current ? pct(v.pOnTime) : status}`);
     c.dataset.tone = tone === 'board' ? 'ok' : tone;

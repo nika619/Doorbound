@@ -7,8 +7,9 @@
 // the whole household there. A helper with too little spare time can free some the same way.
 //
 // Search: iterative deepening on total cost, depth-first over steps in a fixed order so each set of
-// changes is met once. A person's remaining morning is a mean and a variance (stats.ts), so a change
-// moves two numbers on at most two people, in O(1), and is undone by restoring them. Two admissible
+// changes is met once. A person's remaining morning is a set of running sums (a mean, a variance and the
+// power sums that carry today's shared pace; pace.ts), so a change moves the sums of at most two people,
+// in O(1), and is undone by restoring them. Two admissible
 // prunes: work only leaves a person's morning through a change to one of their own steps, so someone
 // still late with none of their steps left in the order is a dead end; and each person still late needs
 // at least one more change, of cost 1 or more. Checked optimal against brute force in the tests.
@@ -20,8 +21,9 @@
 // gives the same plan.
 
 import type { History } from './learn.ts';
-import { applyChanges, currentIndex, durationOf, laneMoments, project, TARGET, type Change, type ChangeKind, type Departure, type Household, type StepDef } from './departure.ts';
-import { cdf, moments, posterior, quantile, sum, type Moments } from './stats.ts';
+import { applyChanges, currentIndex, durationOf, lanePart, project, stepMoments, TARGET, type Change, type ChangeKind, type Departure, type Household, type StepDef } from './departure.ts';
+import { addPart, PARTS, total, type Pace } from './pace.ts';
+import { cdf, posterior, quantile, sum } from './stats.ts';
 
 interface Option {
   kind: ChangeKind;
@@ -31,10 +33,14 @@ interface Option {
   /** Lane giving the step up, and lane taking it on (-1 for none). */
   from: number;
   to: number;
-  /** What the change does to the giving lane, and what the taking lane takes on. */
-  dFrom: Moments;
-  add: Moments | null;
+  /** What the change does to the giving lane's running sums, and what the taking lane takes on. */
+  dFrom: Float64Array;
+  add: Float64Array | null;
 }
+
+const plus = (a: Float64Array, d: Float64Array) => {
+  for (let k = 0; k < PARTS; k++) a[k] += d[k];
+};
 
 export const COST: Record<ChangeKind, number> = { quick: 1, handoff: 2, later: 3, skip: 4 };
 /** Plans looked at before settling for the greedy one. Real households stay far below it. */
@@ -54,23 +60,26 @@ export function findReroute(dep: Departure, household: Household, history: Histo
   const views = project(dep, nowMs);
   const P = dep.lanes.length;
   const gateSec = (dep.gateMs - nowMs) / 1000;
-  const mean = new Float64Array(P);
-  const variance = new Float64Array(P);
+  const parts: Float64Array[] = [];
+  const paces: Pace[] = [];
+  /** Each lane's shared-pace factor: changes never alter it, since it rests on finished steps only. */
+  const shared = new Float64Array(P);
   const touched = new Int32Array(P);
   for (let i = 0; i < P; i++) {
-    const m = laneMoments(dep.lanes[i], nowMs);
-    mean[i] = m.mean;
-    variance[i] = m.variance;
+    const lp = lanePart(dep.lanes[i], nowMs, dep.rho);
+    parts.push(lp.acc);
+    paces.push(lp.pace);
+    shared[i] = lp.c;
   }
   const okAtStart = views.map((v) => v.readyMs <= dep.gateMs);
 
-  const dist = (i: number) => sum([{ mean: mean[i], variance: Math.max(0, variance[i]) }]);
+  const dist = (i: number) => sum([total(parts[i], shared[i])]);
   /** How far past the gate lane i is ready, at the target confidence, in ms. Same arithmetic as projectLane. */
-  const over = (i: number) => (mean[i] > 0 ? nowMs + quantile(dist(i)!, TARGET) * 1000 : views[i].readyMs) - dep.gateMs;
+  const over = (i: number) => (parts[i][0] > 0 ? nowMs + quantile(dist(i)!, TARGET) * 1000 : views[i].readyMs) - dep.gateMs;
   /** Lateness each lane may keep, in ms: none for anyone on time, some for anyone already late in a best effort. */
   const allow = new Float64Array(P);
   const ok = (i: number) => (!touched[i] && okAtStart[i]) || over(i) <= allow[i] - EPS_MS;
-  const pOn = (i: number) => (mean[i] > 0 ? cdf(dist(i)!, gateSec) : views[i].readyMs <= dep.gateMs ? 1 : 0);
+  const pOn = (i: number) => (parts[i][0] > 0 ? cdf(dist(i)!, gateSec) : views[i].readyMs <= dep.gateMs ? 1 : 0);
 
   if (okAtStart.every(Boolean)) return { changes: [], stillLateSec: 0, optimal: true };
 
@@ -88,17 +97,21 @@ export function findReroute(dep: Departure, household: Household, history: Histo
       const t = lane.tasks[i];
       const def = defs.get(t.key);
       if (t.state !== 'todo' || !def) continue;
-      const m = moments(t);
-      const gone = { mean: -m.mean, variance: -m.variance };
+      // Each step at its own person's pace today; a handed-over step at the helper's.
+      const m = stepMoments(t, paces[li], dep.rho);
+      const gone = addPart(new Float64Array(PARTS), m, t.sigma, -1);
       const base = { taskKey: t.key, name: t.name, from: li, to: -1, add: null };
       const opts: Option[] = [];
       if (def.quick && !t.quick) {
-        const q = moments(posterior(def.quick.sec));
-        if (q.mean < m.mean) opts.push({ ...base, kind: 'quick', cost: COST.quick, dFrom: { mean: q.mean - m.mean, variance: q.variance - m.variance } });
+        const qd = posterior(def.quick.sec);
+        const q = stepMoments(qd, paces[li], dep.rho);
+        if (q.mean < m.mean) opts.push({ ...base, kind: 'quick', cost: COST.quick, dFrom: addPart(addPart(new Float64Array(PARTS), q, qd.sigma), m, t.sigma, -1) });
       }
       for (const h of def.helpers ?? []) {
         const to = laneOf.get(h);
-        if (to !== undefined && to !== li) opts.push({ ...base, kind: 'handoff', cost: COST.handoff, to, dFrom: gone, add: moments(durationOf(history, h, t.stepId, def.statedSec)) });
+        if (to === undefined || to === li) continue;
+        const hd = durationOf(history, h, t.stepId, def.statedSec);
+        opts.push({ ...base, kind: 'handoff', cost: COST.handoff, to, dFrom: gone, add: addPart(new Float64Array(PARTS), stepMoments(hd, paces[to], dep.rho), hd.sigma) });
       }
       if (def.canWait) opts.push({ ...base, kind: 'later', cost: COST.later, dFrom: gone });
       if (def.optional) opts.push({ ...base, kind: 'skip', cost: COST.skip, dFrom: gone });
@@ -110,27 +123,23 @@ export function findReroute(dep: Departure, household: Household, history: Histo
   }
 
   const chosen: Option[] = [];
-  function apply(o: Option): number[] {
-    const saved = [mean[o.from], variance[o.from], o.to < 0 ? 0 : mean[o.to], o.to < 0 ? 0 : variance[o.to]];
-    mean[o.from] += o.dFrom.mean;
-    variance[o.from] += o.dFrom.variance;
+  function apply(o: Option): Float64Array[] {
+    const saved = [parts[o.from].slice(), o.add ? parts[o.to].slice() : parts[o.from]];
+    plus(parts[o.from], o.dFrom);
     touched[o.from]++;
     if (o.add) {
-      mean[o.to] += o.add.mean;
-      variance[o.to] += o.add.variance;
+      plus(parts[o.to], o.add);
       touched[o.to]++;
     }
     chosen.push(o);
     return saved;
   }
-  function undo(o: Option, saved: number[]) {
+  function undo(o: Option, saved: Float64Array[]) {
     chosen.pop();
-    mean[o.from] = saved[0];
-    variance[o.from] = saved[1];
+    parts[o.from].set(saved[0]);
     touched[o.from]--;
     if (o.add) {
-      mean[o.to] = saved[2];
-      variance[o.to] = saved[3];
+      parts[o.to].set(saved[1]);
       touched[o.to]--;
     }
   }
@@ -249,7 +258,7 @@ export function findReroute(dep: Departure, household: Household, history: Histo
     const g = greedy();
     if (!found || g.lateMs < found.lateMs) found = g;
   }
-  const toChange = (o: Option): Change => ({ kind: o.kind, taskKey: o.taskKey, name: o.name, from: dep.lanes[o.from].personId, to: o.to < 0 ? undefined : dep.lanes[o.to].personId, savedSec: Math.round(-o.dFrom.mean) });
+  const toChange = (o: Option): Change => ({ kind: o.kind, taskKey: o.taskKey, name: o.name, from: dep.lanes[o.from].personId, to: o.to < 0 ? undefined : dep.lanes[o.to].personId, savedSec: Math.round(-o.dFrom[0]) });
   return { changes: found!.opts.map(toChange), stillLateSec: Math.max(0, Math.ceil(found!.lateMs / 1000)), optimal: !exhausted };
 }
 

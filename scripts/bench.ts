@@ -48,8 +48,8 @@ if (process.argv[2] !== 'load') {
   for (let i = 0; i < 20_000; i++) {
     const t = performance.now();
     for (const lane of dep.lanes) {
-      projectLane(lane, dep.gateMs, Date.now());
-      laneTimeline(lane, dep.gateMs, Date.now());
+      projectLane(lane, dep.gateMs, Date.now(), dep.rho);
+      laneTimeline(lane, dep.gateMs, Date.now(), dep.rho);
     }
     ticks.push(performance.now() - t);
   }

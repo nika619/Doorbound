@@ -26,7 +26,7 @@ test('a departure plans with learned times, not stated ones, and says how sure i
 
 test('the chance of making the gate is right, mid-morning and mid-step (Monte Carlo, 100k mornings)', () => {
   const h = learnedHistory();
-  let dep = startDeparture(household, h, 'School run', at(30), at(0));
+  let dep = startDeparture(household, h, 'School run', at(30), at(0), 0); // rho 0: independent steps, as drawn below
   dep = markDone(dep, 'aarav', at(9))!.dep;
   const now = at(12); // Isha 12 minutes into her shower, Aarav 3 minutes into his teeth
   const views = project(dep, now);
@@ -121,10 +121,10 @@ test('undo restores the plan before the re-route, but only while nothing has hap
 });
 
 test('the runway puts done steps where they really were, the rest after the current one, and waiting steps after the gate', () => {
-  let dep = startDeparture(household, new Map(), 'School run', at(28), at(0));
+  let dep = startDeparture(household, new Map(), 'School run', at(28), at(0), 0); // rho 0: this checks the layout, pace.test.ts the pace
   dep = markDone(dep, 'dad', at(9))!.dep; // lunches took 9, not 8
   const dad = { ...dep.lanes[2], tasks: dep.lanes[2].tasks.map((t) => (t.stepId === 'dishwasher' ? { ...t, state: 'later' as const } : t)) };
-  const blocks = laneTimeline(dad, at(28), at(10));
+  const blocks = laneTimeline(dad, at(28), at(10), dep.rho);
   assert.deepEqual(
     blocks.map((b) => [b.key, b.state]),
     [
@@ -141,7 +141,7 @@ test('the runway puts done steps where they really were, the rest after the curr
   assert.ok(near(dishwasher.endMs - dishwasher.startMs, moments(posterior(600)).mean * 1000));
   assert.equal(car.overrun, false);
   const planned = at(9) + quantile(posterior(180), TARGET) * 1000; // 7:25:18, at 85%
-  const later = laneTimeline(dad, at(28), planned + MIN).find((b) => b.key === 'dad/car')!;
+  const later = laneTimeline(dad, at(28), planned + MIN, dep.rho).find((b) => b.key === 'dad/car')!;
   assert.equal(later.overrun, true, 'past its 85% time, the car is overrunning');
   assert.ok(later.endMs >= planned + MIN + GRACE_MS);
 });
