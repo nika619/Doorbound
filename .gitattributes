@@ -1,4 +1,9 @@
+# Text is stored and checked out with LF on every platform. The build hashes each inline script and
+# style for the Content Security Policy; a CRLF checkout (Windows) once changed those hashes and the
+# board rendered unstyled.
 * text=auto eol=lf
-*.woff2 binary
 *.png binary
 *.jpg binary
+*.gif binary
+*.webp binary
+*.woff2 binary
