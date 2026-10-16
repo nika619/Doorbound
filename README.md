@@ -110,14 +110,16 @@ An Alexa+ add-on talks to a self-hosted MCP server over Streamable HTTP, so Door
 DOMAIN=doorbound.example.com AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d
 ```
 
-Then register `https://doorbound.example.com/mcp` as the add-on's MCP endpoint, with `AUTH_TOKEN` as its bearer token. [`compose.yaml`](compose.yaml) runs the server read-only, with every Linux capability dropped, no new privileges, a 256 MB memory cap and a volume for the household, behind Caddy, which fetches and renews the certificate. The [`Dockerfile`](Dockerfile) builds in one stage and ships only Node and `dist/` (the pages and the server bundled into one 0.9 MB file): no sources, no `node_modules`, no npm, running as the `node` user. One household is one container of about 80 MB, so households scale out side by side.
+For Alexa+, add `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` and follow [ALEXA.md](ALEXA.md): Alexa+ signs in to a private MCP server with OAuth client credentials, which the server issues itself (one-hour, signed, bound to its own `/mcp`), then calls `https://doorbound.example.com/mcp`. [`compose.yaml`](compose.yaml) runs the server read-only, with every Linux capability dropped, no new privileges, a 256 MB memory cap and a volume for the household, behind Caddy, which fetches and renews the certificate. The [`Dockerfile`](Dockerfile) builds in one stage and ships only Node and `dist/` (the pages and the server bundled into one 0.9 MB file): no sources, no `node_modules`, no npm, running as the `node` user. One household is one container of about 80 MB, so households scale out side by side.
 
 Without Docker, `npm start` behind any HTTPS proxy or tunnel, with these set:
 
 | Variable | What it does |
 |---|---|
 | `HOST` | Address to listen on. Anything other than loopback requires the next two. |
-| `AUTH_TOKEN` | Bearer token the add-on presents (32+ characters). |
+| `AUTH_TOKEN` | A fixed bearer token for your own tools and scripts (32+ characters). |
+| `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | How Alexa+ signs in (secret 32+ characters): it trades them at `/oauth/token` for a one-hour token. Rotating the secret revokes every token. |
+| `PUBLIC_URL` | The https origin Alexa+ calls, for example `https://doorbound.example.com`; tokens are bound to its `/mcp`. |
 | `ALLOWED_HOSTS` | Host names clients will use (DNS-rebinding protection). |
 | `ALLOWED_ORIGINS` | Origins allowed to call `/mcp` from a browser, if any. |
 | `SCREEN_KEY` | Key a TV presents to read the board: open `https://your-host/board#k=SCREEN_KEY` (the fragment never reaches a server log). |

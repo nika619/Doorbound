@@ -48,6 +48,7 @@ Five risks of AI-built apps that cost money or invite lawsuits without anyone br
 
 ## Beyond the checklist
 
+- **Alexa+ sign-in (OAuth 2.1 client credentials):** client id and secret compared in constant time, both always checked; accepted by HTTP Basic or in the body, never both and never in the query string; tokens last an hour, are HMAC-signed with a key derived from the secret (rotating it revokes them all), bound to this server's `/mcp` (RFC 8707) and checked in constant time; errors follow RFC 6749 5.2; the token endpoint is rate-limited to one a second per client and audited; discovery documents follow RFC 8414 and RFC 9728. Tested in `oauth.test.ts` and end to end in the smoke test, in CI against the locked-down container.
 - **Secrets** live only in environment variables. `.env` and the data directory are git-ignored; nothing secret is in the repository or in any page.
 - **The container:** the image ships Node and the built files only (no sources, no `node_modules`, npm removed) and runs as the unprivileged `node` user. `compose.yaml` runs it with a read-only filesystem except the household volume, every Linux capability dropped, `no-new-privileges`, and a 256 MB memory cap; only Caddy is published to the network.
 - **Resource limits:** request bodies over 64 KB are refused before parsing (413); headers time out at 10 s and requests at 15 s; at most 64 headers. A re-plan is bounded by a search budget (20,000 plans, then a greedy stand-in), so a large household cannot make one request run long.
