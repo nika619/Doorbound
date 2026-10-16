@@ -91,7 +91,7 @@ function syncClock(serverMs: number, sentPerf: number) {
 
 let audio: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
-let soundOn = true;
+let soundOn = false; // off until someone switches it on: a kitchen screen should not surprise anyone
 function unlock() {
   try {
     audio ??= new AudioContext();
@@ -270,26 +270,31 @@ function rowFor(id: string, index: number): Row {
   const fill = el('i', '', meter);
   const ready = el('span', 'ready', li);
   ready.setAttribute('aria-hidden', 'true');
-  const done = el('button', 'done', li, 'DONE') as HTMLButtonElement;
+  const done = el('button', 'done', li) as HTMLButtonElement;
   done.type = 'button';
+  const setDone = (armedNow: boolean) => {
+    done.textContent = armedNow ? 'TAP AGAIN' : 'DONE';
+    done.setAttribute('aria-label', `${armedNow ? 'Tap again to confirm' : 'Done'}: ${nameOf(id)}`);
+  };
+  setDone(false);
   done.hidden = !bridge; // a TV is read-only; voice and the Echo Show's touch screen change things
   let armed: ReturnType<typeof setTimeout> | undefined;
   done.addEventListener('click', () => {
     // Two taps, so a brush against the screen never marks a step done.
     if (!armed) {
       done.classList.add('arm');
-      done.textContent = 'TAP AGAIN';
+      setDone(true);
       armed = setTimeout(() => {
         armed = undefined;
         done.classList.remove('arm');
-        done.textContent = 'DONE';
+        setDone(false);
       }, 3000);
       return;
     }
     clearTimeout(armed);
     armed = undefined;
     done.classList.remove('arm');
-    done.textContent = 'DONE';
+    setDone(false);
     void act('step_done', { person: nameOf(id) });
   });
   r = { li, sr, now, then, status, chance, meter, fill, ready, done, label };
