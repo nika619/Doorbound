@@ -21,7 +21,7 @@ To report a problem, open a private security advisory on the GitHub repository r
 | 5 | Sanitize user input | Pass | Length and shape limits on every string and number (`LIMITS` in `src/server/store.ts`: 8 people, 15 steps, 32-character names). The board writes text with `textContent` only, never `innerHTML` (`src/board/board.ts`), so a name cannot become markup. |
 | 6 | Parameterized queries | N/A | No SQL or other query language. |
 | 7 | Lock down CORS | Pass | No CORS headers are sent at all, so browsers block cross-origin reads. `/mcp` also validates `Host` and `Origin` (DNS-rebinding protection) with the MCP SDK's validators: loopback names only when local, the configured allow-lists otherwise. Checked by `npm run smoke` (a foreign Origin gets 403). |
-| 8 | Force HTTPS | Pass when deployed as documented | Alexa+ reaches the server over HTTPS through a TLS-terminating proxy or tunnel. With `TRUST_PROXY=1` and `X-Forwarded-Proto: https`, the server sends HSTS (`baseHeaders`). On loopback (development) it speaks plain HTTP to the machine itself only. |
+| 8 | Force HTTPS | Pass | `compose.yaml` puts the server behind Caddy, which serves HTTPS only for the configured domain and fetches and renews its certificate; HTTP is redirected. With `TRUST_PROXY=1` and `X-Forwarded-Proto: https`, the server also sends HSTS (`baseHeaders`). On loopback (development) it speaks plain HTTP to the machine itself only. |
 | 9 | IDOR | Pass | Clients never name objects by id. A tool says "Isha is done"; the server finds Isha in its own household and her current step in its own state. There is one household per server, so there is no other household's data to reach. |
 | 10 | Debug off in production | Pass | Errors reach the client as "Something went wrong." with no stack or detail; the log gets the message only (`src/server/main.ts`). Tool failures are plain sentences that say what to do instead. The simulator, a development tool, is served only on loopback. |
 | 11 | CAPTCHA on public forms | N/A | No public forms. Nothing unauthenticated writes data or sends mail. |
@@ -49,6 +49,7 @@ Five risks of AI-built apps that cost money or invite lawsuits without anyone br
 ## Beyond the checklist
 
 - **Secrets** live only in environment variables. `.env` and the data directory are git-ignored; nothing secret is in the repository or in any page.
+- **The container:** the image ships Node and the built files only (no sources, no `node_modules`, npm removed) and runs as the unprivileged `node` user. `compose.yaml` runs it with a read-only filesystem except the household volume, every Linux capability dropped, `no-new-privileges`, and a 256 MB memory cap; only Caddy is published to the network.
 - **Resource limits:** request bodies over 64 KB are refused before parsing (413); headers time out at 10 s and requests at 15 s; at most 64 headers. A re-plan is bounded by a search budget (20,000 plans, then a greedy stand-in), so a large household cannot make one request run long.
 - **The screen:** it reads state and, on a touch screen inside Alexa+, can mark a step done with two taps (so a brush against the screen does nothing). A TV is read-only.
 - **Privacy by design:** no audio is stored or processed here (Alexa+ turns speech into tool calls); the only personal data is first names and how long steps take.
