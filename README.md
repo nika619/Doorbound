@@ -84,6 +84,8 @@ Zero errors in the load test. Pushed to 2,000 screens, one process served about 
 
 ## Run it
 
+On real Alexa+ (Amazon's MCP toolkit, with sign-in and the listing ready): see [ALEXA.md](ALEXA.md). For a few real mornings at home: [PILOT.md](PILOT.md).
+
 Needs Node 20 or later.
 
 ```bash
