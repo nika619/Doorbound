@@ -104,6 +104,11 @@ assert.ok(!csp.includes('unsafe-inline') && csp.includes("default-src 'none'") &
 assert.equal(board.headers.get('x-content-type-options'), 'nosniff');
 assert.equal(board.headers.get('referrer-policy'), 'no-referrer');
 step('/board: hash-only CSP, nothing loads from anywhere, no framing, nosniff, no referrer');
+const story = await fetch(new URL('/', base));
+assert.equal(story.status, 200);
+assert.match(story.headers.get('content-security-policy') ?? '', /script-src 'sha256-/);
+assert.ok((await story.text()).includes('Every morning is a'));
+step('/ serves the story page under the same hash-only CSP');
 assert.equal((await fetch(new URL('/nope', base))).status, 404);
 assert.equal(await (await fetch(new URL('/healthz', base))).text(), 'ok');
 step('unknown paths are 404; /healthz answers');
