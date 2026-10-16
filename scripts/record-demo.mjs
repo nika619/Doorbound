@@ -10,7 +10,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const base = process.env.DEPARTURES_URL ?? 'http://127.0.0.1:3939';
+const base = process.env.DOORBOUND_URL ?? 'http://127.0.0.1:3939';
 const out = 'dist/video';
 const size = { width: 1920, height: 1080 };
 rmSync(out, { recursive: true, force: true });

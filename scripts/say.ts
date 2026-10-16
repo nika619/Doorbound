@@ -3,7 +3,7 @@
 //         tsx scripts/say.ts start_departure '{"leaveIn": 28}'   (leaveIn: minutes from the server's clock)
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
-const base = process.env.DEPARTURES_URL ?? 'http://127.0.0.1:3939';
+const base = process.env.DOORBOUND_URL ?? 'http://127.0.0.1:3939';
 const [tool, json = '{}'] = process.argv.slice(2);
 if (!tool) throw new Error('usage: tsx scripts/say.ts <tool> [json]');
 const args = JSON.parse(json) as Record<string, unknown>;

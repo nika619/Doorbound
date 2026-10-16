@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
-const base = process.env.DEPARTURES_URL ?? 'http://127.0.0.1:3939';
+const base = process.env.DOORBOUND_URL ?? 'http://127.0.0.1:3939';
 const url = new URL('/mcp', base);
 const headers: Record<string, string> = process.env.AUTH_TOKEN ? { Authorization: `Bearer ${process.env.AUTH_TOKEN}` } : {};
 const step = (name: string) => console.log(`ok  ${name}`);

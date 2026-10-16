@@ -56,7 +56,7 @@ if (process.argv[2] !== 'load') {
   summary("the board's work per second (3 people)", ticks);
   console.log(`board payload for the demo household: ${JSON.stringify({ departure: dep, people: household.people }).length} bytes of JSON; an unchanged poll is a 204 with no body`);
 } else {
-  const base = process.env.DEPARTURES_URL ?? 'http://127.0.0.1:3940';
+  const base = process.env.DOORBOUND_URL ?? 'http://127.0.0.1:3940';
   const SCREENS = Number(process.env.SCREENS ?? 300);
   const SPEAKERS = Number(process.env.SPEAKERS ?? 30);
   const SECONDS = Number(process.env.SECONDS ?? 20);

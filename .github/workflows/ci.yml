@@ -58,7 +58,7 @@ jobs:
       - name: End-to-end smoke test against the container
         run: npm run smoke
         env:
-          DEPARTURES_URL: http://localhost:3939
+          DOORBOUND_URL: http://localhost:3939
           AUTH_TOKEN: ${{ env.TOKEN }}
       - name: Container logs
         if: failure()
