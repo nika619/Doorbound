@@ -87,9 +87,17 @@ For a real household, `npm start` (no demo clock, empty household: tell it your 
 
 ![The simulator: the Echo Show on the wall, Alexa's answer as a subtitle, the demo morning's timeline and the dock](docs/simulator.jpg)
 
-## Connect it
+## Deploy it
 
-An Alexa+ add-on talks to a self-hosted MCP server over Streamable HTTP. To expose Departures beyond your machine, put it behind HTTPS (a reverse proxy or tunnel) and set:
+An Alexa+ add-on talks to a self-hosted MCP server over Streamable HTTP, so Departures has to be reachable over HTTPS. With Docker, one command does it, certificate included:
+
+```bash
+DOMAIN=departures.example.com AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d
+```
+
+Then register `https://departures.example.com/mcp` as the add-on's MCP endpoint, with `AUTH_TOKEN` as its bearer token. [`compose.yaml`](compose.yaml) runs the server read-only, with every Linux capability dropped, no new privileges, a 256 MB memory cap and a volume for the household, behind Caddy, which fetches and renews the certificate. The [`Dockerfile`](Dockerfile) builds in one stage and ships only Node and `dist/` (the pages and the server bundled into one 0.9 MB file): no sources, no `node_modules`, no npm, running as the `node` user. One household is one container of about 80 MB, so households scale out side by side.
+
+Without Docker, `npm start` behind any HTTPS proxy or tunnel, with these set:
 
 | Variable | What it does |
 |---|---|
