@@ -60,7 +60,7 @@ const clockIn = (minutes: number) => {
 };
 
 // ---------- MCP client ----------
-const client = new Client({ name: 'departures-alexa-sim', version: '1.0.0' });
+const client = new Client({ name: 'doorbound-alexa-sim', version: '1.0.0' });
 await client.connect(new StreamableHTTPClientTransport(new URL('/mcp', location.href)));
 const protocol = client.getNegotiatedProtocolVersion();
 $('proto').textContent = `MCP ${protocol}`;
@@ -168,7 +168,7 @@ async function openView(args: Record<string, unknown>, result: CallToolResult) {
   log('in', `resources/read ${BOARD_URI} → ${res.contents[0].mimeType}`);
   const iframe = document.createElement('iframe');
   iframe.className = 'view inline';
-  iframe.title = 'Departures board';
+  iframe.title = 'Doorbound board';
   // An opaque origin: the board can reach this page only through the MCP Apps bridge.
   iframe.setAttribute('sandbox', 'allow-scripts');
   iframe.srcdoc = 'text' in res.contents[0] ? String(res.contents[0].text) : '';
@@ -176,7 +176,7 @@ async function openView(args: Record<string, unknown>, result: CallToolResult) {
   $('home').classList.add('gone');
   const bridge = new AppBridge(
     client,
-    { name: 'departures-alexa-sim', version: '1.0.0' },
+    { name: 'doorbound-alexa-sim', version: '1.0.0' },
     { serverTools: {}, logging: {} },
     { hostContext: { displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'], platform: 'web', theme: 'dark', locale: navigator.language } },
   );
@@ -212,7 +212,7 @@ async function hear(utterance: string, who: string | null) {
   addMsg('you', utterance, who ?? 'Someone');
   await syncClock();
   const call = route(utterance, people, who, clockIn);
-  if (!call) return alexaSays("Sorry, I can't help with that in Departures yet.");
+  if (!call) return alexaSays("Sorry, I can't help with that in Doorbound yet.");
   log('out', `tools/call ${call.tool} ${JSON.stringify(call.args)}`);
   const started = performance.now();
   let r: CallToolResult;
@@ -220,7 +220,7 @@ async function hear(utterance: string, who: string | null) {
     r = (await client.callTool({ name: call.tool, arguments: call.args })) as CallToolResult;
   } catch (e) {
     log('err', `${call.tool} failed: ${(e as Error).message}`);
-    return alexaSays('Departures is not answering right now.', true);
+    return alexaSays('Doorbound is not answering right now.', true);
   }
   log(r.isError ? 'err' : 'in', `← ${call.tool} ${r.isError ? 'error result' : 'result'} in ${Math.round(performance.now() - started)} ms`);
   const text = r.content.find((c) => c.type === 'text');
