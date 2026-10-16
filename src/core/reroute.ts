@@ -74,8 +74,17 @@ export function findReroute(dep: Departure, household: Household, history: Histo
   const okAtStart = views.map((v) => v.readyMs <= dep.gateMs);
 
   const dist = (i: number) => sum([total(parts[i], shared[i])]);
+  // Each lane's verdict is worked out once per change to its sums: a node re-checks every lane, but moves at most two.
+  const overAt = new Float64Array(P);
+  const fresh = new Uint8Array(P);
   /** How far past the gate lane i is ready, at the target confidence, in ms. Same arithmetic as projectLane. */
-  const over = (i: number) => (parts[i][0] > 0 ? nowMs + quantile(dist(i)!, TARGET) * 1000 : views[i].readyMs) - dep.gateMs;
+  const over = (i: number) => {
+    if (!fresh[i]) {
+      overAt[i] = (parts[i][0] > 0 ? nowMs + quantile(dist(i)!, TARGET) * 1000 : views[i].readyMs) - dep.gateMs;
+      fresh[i] = 1;
+    }
+    return overAt[i];
+  };
   /** Lateness each lane may keep, in ms: none for anyone on time, some for anyone already late in a best effort. */
   const allow = new Float64Array(P);
   const ok = (i: number) => (!touched[i] && okAtStart[i]) || over(i) <= allow[i] - EPS_MS;
@@ -123,13 +132,19 @@ export function findReroute(dep: Departure, household: Household, history: Histo
   }
 
   const chosen: Option[] = [];
+  /** The sums each change replaced, one pair per depth, allocated once: no garbage per node. */
+  const savedAt: Float64Array[][] = [];
   function apply(o: Option): Float64Array[] {
-    const saved = [parts[o.from].slice(), o.add ? parts[o.to].slice() : parts[o.from]];
+    const saved = (savedAt[chosen.length] ??= [new Float64Array(PARTS), new Float64Array(PARTS)]);
+    saved[0].set(parts[o.from]);
     plus(parts[o.from], o.dFrom);
     touched[o.from]++;
+    fresh[o.from] = 0;
     if (o.add) {
+      saved[1].set(parts[o.to]);
       plus(parts[o.to], o.add);
       touched[o.to]++;
+      fresh[o.to] = 0;
     }
     chosen.push(o);
     return saved;
@@ -138,9 +153,11 @@ export function findReroute(dep: Departure, household: Household, history: Histo
     chosen.pop();
     parts[o.from].set(saved[0]);
     touched[o.from]--;
+    fresh[o.from] = 0;
     if (o.add) {
       parts[o.to].set(saved[1]);
       touched[o.to]--;
+      fresh[o.to] = 0;
     }
   }
 
