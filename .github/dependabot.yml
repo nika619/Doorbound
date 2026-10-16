@@ -1,0 +1,20 @@
+# Weekly checks for outdated or vulnerable dependencies: npm packages, the CI actions, the base image.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      mcp:
+        patterns: ["@modelcontextprotocol/*"]
+      build-tools:
+        patterns: ["esbuild", "typescript", "tsx", "@types/*", "@fontsource/*", "lenis", "playwright"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
