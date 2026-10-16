@@ -45,6 +45,12 @@ Everything the board and Alexa say comes from one model, in `src/core/stats.ts` 
 
 4. **The re-plan is exact.** It finds the cheapest set of changes (quicker version 1, handoff 2, waits until after 3, skipped 4; at most one per step, never the step in progress) after which everyone is ready by the gate with at least 85% confidence; among equally cheap plans, the one most likely to get the whole household out. It is an iterative-deepening search over the changes, where each change updates two numbers per person in O(1), with two pruning rules that never cut off a better plan. When nothing gets everyone there, a binary search finds the least lateness any plan can reach, then the cheapest plan that reaches it (so Dad's dishwasher can wait, freeing him to take Isha's bag). A search budget bounds the work, with a greedy plan past it.
 
+The story page draws each of these from the real code as you scroll: the curve learning from five real mornings, the steps adding up, and the re-plan's search.
+
+![The story page: five real mornings drop in and the curve moves from what she said to what she does](docs/story-maths.jpg)
+
+![The story page: her chance falls to 47%, the search tries the gentlest fixes, and the cheapest that works wins](docs/story-replan.jpg)
+
 **How we know it is right** (all in `npm test`):
 
 - The chance of making the gate matches **100,000 simulated mornings** to within 2 percentage points, mid-morning with a step half done.
