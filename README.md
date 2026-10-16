@@ -1,4 +1,4 @@
-# Departures
+# Doorbound
 
 **The household's morning, as a live departure board on Alexa+.** Who is doing what, each person's real chance of making the door on time, and a new plan the moment someone slips.
 
@@ -96,13 +96,13 @@ For a real household, `npm start` (no demo clock, empty household: tell it your 
 
 ## Deploy it
 
-An Alexa+ add-on talks to a self-hosted MCP server over Streamable HTTP, so Departures has to be reachable over HTTPS. With Docker, one command does it, certificate included:
+An Alexa+ add-on talks to a self-hosted MCP server over Streamable HTTP, so Doorbound has to be reachable over HTTPS. With Docker, one command does it, certificate included:
 
 ```bash
-DOMAIN=departures.example.com AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d
+DOMAIN=doorbound.example.com AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d
 ```
 
-Then register `https://departures.example.com/mcp` as the add-on's MCP endpoint, with `AUTH_TOKEN` as its bearer token. [`compose.yaml`](compose.yaml) runs the server read-only, with every Linux capability dropped, no new privileges, a 256 MB memory cap and a volume for the household, behind Caddy, which fetches and renews the certificate. The [`Dockerfile`](Dockerfile) builds in one stage and ships only Node and `dist/` (the pages and the server bundled into one 0.9 MB file): no sources, no `node_modules`, no npm, running as the `node` user. One household is one container of about 80 MB, so households scale out side by side.
+Then register `https://doorbound.example.com/mcp` as the add-on's MCP endpoint, with `AUTH_TOKEN` as its bearer token. [`compose.yaml`](compose.yaml) runs the server read-only, with every Linux capability dropped, no new privileges, a 256 MB memory cap and a volume for the household, behind Caddy, which fetches and renews the certificate. The [`Dockerfile`](Dockerfile) builds in one stage and ships only Node and `dist/` (the pages and the server bundled into one 0.9 MB file): no sources, no `node_modules`, no npm, running as the `node` user. One household is one container of about 80 MB, so households scale out side by side.
 
 Without Docker, `npm start` behind any HTTPS proxy or tunnel, with these set:
 
@@ -116,7 +116,7 @@ Without Docker, `npm start` behind any HTTPS proxy or tunnel, with these set:
 | `TRUST_PROXY=1` | Behind a proxy: rate-limit by the forwarded address, send HSTS over HTTPS. |
 | `DATA_DIR` | Where the household file and audit log live (default `data/`). |
 
-The MCP endpoint is `/mcp`; the board is the resource `ui://departures/board.html`.
+The MCP endpoint is `/mcp`; the board is the resource `ui://doorbound/board.html`.
 
 ## Check it
 
