@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Departures: every morning is a departure</title>
+<meta name="description" content="A live departure board for the household morning, on Alexa+. It learns how long things really take, gives each person a real chance of making the door, and re-plans the moment someone slips." />
+<link rel="icon" href="data:," />
+<style>
+/*FONTS*/
+:root {
+  --page: #090807; --raise: #14120f; --card: #17150f; --line: #26231f; --cell: #1c1a17;
+  --ink: #f3ede2; --dim: #8f887c; --faint: #7a7366; --amber: #ffb547; --go: #8fdcaa; --late: #ff6b4a; --alexa: #31c6f4;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+  --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif; --serif: 'Instrument Serif', Georgia, serif;
+  --gut: clamp(20px, 5vw, 72px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--page); color: var(--ink); font: 500 17px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+body { overflow-x: clip; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spacing: 0; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* static film grain over everything */
+body::after { content: ''; position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: .06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+/* ---------- tokens for text that arrives ---------- */
+.w { display: inline-block; opacity: 0; filter: blur(8px); transform: translateY(20px); transition: opacity .7s var(--ease), filter .7s var(--ease), transform .7s var(--ease); transition-delay: calc(var(--i, 0) * 60ms); }
+.in .w, .w.in { opacity: 1; filter: blur(0); transform: none; }
+.eyebrow { font: 700 14px/1 var(--cond); letter-spacing: .26em; color: var(--dim); text-transform: uppercase; display: flex; align-items: center; gap: 14px; }
+.eyebrow .n { color: var(--amber); }
+.eyebrow .n::after { content: ''; display: inline-block; width: 30px; height: 1.5px; margin: 0 0 4px 12px; background: currentColor; vertical-align: middle; opacity: .7; }
+
+/* ---------- chrome: progress hairline, pill nav, section rail ---------- */
+.hairline { position: fixed; left: 0; top: 0; right: 0; height: 2px; z-index: 40; transform-origin: 0 50%; transform: scaleX(0); background: var(--amber); }
+.nav { position: fixed; top: 16px; left: 50%; z-index: 30; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 18px; border-radius: 999px; background: #14120fcc; border: 1px solid #2c2822; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: 10px; font: 700 15px/1 var(--cond); letter-spacing: .24em; margin-right: 10px; }
+.brand svg { width: 20px; height: 20px; fill: var(--amber); }
+.nav a.l { padding: 9px 14px; border-radius: 999px; font: 700 13px/1 var(--cond); letter-spacing: .18em; color: var(--dim); text-transform: uppercase; transition: color .3s, background-color .3s; }
+.nav a.l:hover, .nav a.l.on { color: var(--ink); background: #ffffff0d; }
+.pill { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 22px; border-radius: 999px; font: 700 14px/1 var(--cond); letter-spacing: .18em; text-transform: uppercase; transition: transform .3s var(--ease), background-color .3s, color .3s, border-color .3s; }
+.pill.solid { background: var(--amber); color: #120e06; }
+.pill.solid:hover { transform: translateY(-2px); background: #ffc56e; }
+.pill.ghost { border: 1.5px solid #3a352d; color: var(--ink); }
+.pill.ghost:hover { border-color: var(--ink); transform: translateY(-2px); }
+.pill .arr { transition: transform .3s var(--ease); }
+.pill:hover .arr { transform: translateX(4px); }
+.rail { position: fixed; left: 26px; top: 50%; z-index: 20; transform: translateY(-50%); display: grid; gap: 14px; }
+.rail a { display: flex; align-items: center; gap: 12px; font: 700 12px/1 var(--cond); letter-spacing: .2em; color: #5d574e; transition: color .4s var(--ease); }
+.rail a i { width: 18px; height: 1.5px; background: currentColor; transition: width .4s var(--ease); }
+.rail a span { opacity: 0; transform: translateX(-6px); transition: opacity .4s var(--ease), transform .4s var(--ease); }
+.rail a.on { color: var(--amber); }
+.rail a.on i { width: 34px; }
+.rail:hover a span { opacity: 1; transform: none; }
+
+/* ---------- hero ---------- */
+.hero { position: relative; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: center; gap: 4vw; padding: 120px var(--gut) 80px calc(var(--gut) + 60px); overflow: hidden; isolation: isolate;
+  background: radial-gradient(900px 600px at 70% 30%, #ffb54714, transparent 70%), radial-gradient(1200px 800px at 0% 100%, #ffb5470a, transparent 60%); }
+.hero::before { content: ''; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(#ffffff14 1px, transparent 1.2px); background-size: 28px 28px; mask-image: radial-gradient(ellipse at 60% 45%, #000 0%, transparent 72%); -webkit-mask-image: radial-gradient(ellipse at 60% 45%, #000 0%, transparent 72%); }
+/* a scan line crosses the dot grid once, as the page opens */
+.hero .scanline { position: absolute; left: 0; right: 0; top: 0; height: 1px; z-index: -1; background: linear-gradient(90deg, transparent, var(--amber), transparent); box-shadow: 0 0 24px 2px #ffb54760; animation: scan 2.4s var(--ease) .2s both; }
+@keyframes scan { from { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } to { transform: translateY(100svh); opacity: 0; } }
+.hero h1 { margin-top: 26px; font: 700 clamp(56px, 7.6vw, 148px)/.86 var(--cond); letter-spacing: -.01em; text-transform: uppercase; }
+.hero h1 em { display: inline-block; text-transform: none; font-size: 1.08em; color: var(--amber); }
+.hero p.lede { margin-top: 30px; max-width: 34ch; font-size: clamp(17px, 1.35vw, 22px); color: #cfc7b8; }
+.hero .ctas { margin-top: 38px; display: flex; flex-wrap: wrap; gap: 12px; }
+.cue { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: grid; justify-items: center; gap: 10px; font: 700 11px/1 var(--cond); letter-spacing: .3em; color: var(--dim); }
+.cue i { width: 1.5px; height: 44px; background: linear-gradient(var(--amber), transparent); animation: drip 2s var(--ease) infinite; transform-origin: 50% 0; }
+@keyframes drip { 0% { transform: scaleY(0); } 60% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
+
+/* the device: an Echo Show 15 on the wall, running the real board */
+.stage3d { perspective: 1800px; }
+.device { position: relative; aspect-ratio: 16 / 9; width: 100%; padding: 2.2%; border-radius: 22px; background: linear-gradient(145deg, #23211d, #0b0a09 60%); box-shadow: 0 0 0 1px #34302a, 0 60px 120px -30px #000, 0 30px 80px -40px #ffb54733, inset 0 1px 0 #ffffff1c; transform: rotateY(-16deg) rotateX(6deg) rotateZ(.5deg); transform-style: preserve-3d; transition: transform 1.4s var(--ease); }
+.device::before { content: ''; position: absolute; top: 1%; left: 50%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #2b2924; box-shadow: inset 0 0 0 1px #3a362f; }
+.device::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(115deg, #ffffff12 0%, transparent 32%, transparent 70%, #ffffff06); }
+.device .screen { position: relative; width: 100%; height: 100%; border-radius: 8px; overflow: hidden; background: #0d0c0a; }
+.device iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.hero:hover .device, .device.front { transform: rotateY(-6deg) rotateX(2deg); }
+.reflect { height: 70px; margin: 0 6% 0; border-radius: 50%; background: radial-gradient(ellipse at 50% 0%, #ffb5471f, transparent 70%); filter: blur(18px); transform: translateY(-20px); }
+
+/* ---------- marquee of things people say ---------- */
+.marquee { overflow: hidden; border-block: 1px solid var(--line); padding: 26px 0; }
+.marquee .track { display: flex; gap: 48px; width: max-content; animation: slide 40s linear infinite; }
+.marquee span { font: 700 clamp(40px, 6vw, 96px)/1 var(--cond); text-transform: uppercase; white-space: nowrap; color: transparent; -webkit-text-stroke: 1.5px #5d574e; }
+.marquee span:nth-child(3n + 2) { color: var(--ink); -webkit-text-stroke: 0; }
+.marquee span em { text-transform: none; color: var(--amber); -webkit-text-stroke: 0; }
+@keyframes slide { to { transform: translateX(-50%); } }
+
+/* ---------- scroll stories: a tall track with a pinned stage ---------- */
+.story { position: relative; }
+.story .pin { position: sticky; top: 0; height: 100svh; display: grid; grid-template-columns: minmax(300px, .82fr) minmax(0, 1.18fr); align-items: center; gap: 3vw; padding: 90px var(--gut) 60px calc(var(--gut) + 60px); overflow: hidden; }
+.story .copy { position: relative; height: 62vh; }
+.beat { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 22px; pointer-events: none; }
+.beat h2 { font: 700 clamp(44px, 5.2vw, 96px)/.9 var(--cond); text-transform: uppercase; letter-spacing: -.005em; }
+.beat h2 em { text-transform: none; color: var(--amber); font-size: 1.1em; }
+.beat p { max-width: 36ch; color: #c9c1b2; font-size: clamp(16px, 1.15vw, 19px); opacity: 0; transform: translateY(12px); transition: opacity .6s var(--ease) .25s, transform .6s var(--ease) .25s; }
+.beat.in p { opacity: 1; transform: none; }
+.beat .fine { font: 500 13px/1.4 var(--body); color: var(--dim); }
+.beat code, .fine code { font: 500 .92em/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: var(--amber); }
+.story canvas { width: 100%; height: 72vh; display: block; }
+.story .count { position: absolute; right: var(--gut); bottom: 40px; font: 700 13px/1 var(--cond); letter-spacing: .24em; color: var(--dim); }
+.story .count b { color: var(--amber); font-weight: 700; }
+
+#problem { height: 420vh; } #maths { height: 460vh; } #replan { height: 380vh; }
+.note.n1 { --i: 0; } .note.n2 { --i: 1; } .note.n3 { --i: 2; } .note.n4 { --i: 3; }
+
+/* ---------- section heads ---------- */
+.sec { position: relative; padding: 140px var(--gut) 120px calc(var(--gut) + 60px); }
+.sec h2.big { margin-top: 22px; max-width: 16ch; font: 700 clamp(48px, 6vw, 112px)/.88 var(--cond); text-transform: uppercase; }
+.sec h2.big em { text-transform: none; color: var(--amber); font-size: 1.1em; }
+.sec p.sub { margin-top: 24px; max-width: 52ch; color: #c9c1b2; font-size: clamp(16px, 1.2vw, 20px); }
+
+/* the live board with notes pinned to it */
+.board-sec .wrap { margin-top: 70px; display: grid; grid-template-columns: minmax(170px, 1fr) minmax(0, 3.6fr) minmax(170px, 1fr); gap: 40px; align-items: center; }
+.board-sec .side { display: grid; gap: 22vh; }
+.board-sec .device { transform: none; }
+.note { position: relative; z-index: 2; max-width: 250px; padding: 14px 16px; border-radius: 14px; background: #17150fe6; border: 1px solid #3a352d; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 14px; line-height: 1.4; color: #d8d0c1; opacity: 0; transform: translateY(14px); transition: opacity .7s var(--ease), transform .7s var(--ease); transition-delay: calc(var(--i, 0) * 140ms + 200ms); }
+.note b { display: block; margin-bottom: 4px; font: 700 13px/1.2 var(--cond); letter-spacing: .18em; color: var(--amber); text-transform: uppercase; }
+.note::before { content: ''; position: absolute; width: 34px; height: 1px; top: 22px; }
+.note.l::before { left: 100%; background: linear-gradient(90deg, transparent, var(--amber)); } .note.r::before { right: 100%; background: linear-gradient(90deg, var(--amber), transparent); }
+.side.r .note { justify-self: end; }
+.in .note { opacity: 1; transform: none; }
+
+/* ---------- proof: numbers that count up ---------- */
+.bento { margin-top: 70px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.stat { position: relative; padding: 28px 26px 26px; border-radius: 18px; background: linear-gradient(160deg, #1a1813, #121009); border: 1px solid var(--line); overflow: hidden; opacity: 0; transform: translateY(24px) scale(.98); transition: opacity .8s var(--ease), transform .8s var(--ease), border-color .4s; transition-delay: calc(var(--i, 0) * 70ms); }
+.in .stat { opacity: 1; transform: none; }
+.stat:hover { border-color: #4a4337; }
+.stat.wide { grid-column: span 2; }
+.stat .v { font: 700 clamp(46px, 4.6vw, 84px)/.9 var(--cond); font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: .45em; color: var(--amber); margin-left: 4px; }
+.stat .k { margin-top: 14px; font: 700 13px/1.3 var(--cond); letter-spacing: .2em; text-transform: uppercase; color: var(--amber); }
+.stat .d { margin-top: 8px; font-size: 14px; color: var(--dim); }
+.stat::after { content: ''; position: absolute; inset: auto -40% -60% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(#ffb54714, transparent 70%); }
+
+/* ---------- how it connects ---------- */
+.flow { margin-top: 70px; width: 100%; max-width: 1200px; height: auto; overflow: visible; }
+.flow .box { fill: #15130f; stroke: #3a352d; stroke-width: 1.5; }
+.flow .ttl { font: 700 22px var(--cond); letter-spacing: .14em; fill: var(--ink); text-transform: uppercase; }
+.flow .lbl { font: 500 14px var(--body); fill: var(--dim); }
+.flow .em { font: italic 400 22px var(--serif); fill: var(--amber); }
+.flow .wire { fill: none; stroke: var(--amber); stroke-width: 1.5; stroke-dasharray: 600; stroke-dashoffset: 600; transition: stroke-dashoffset 1.6s var(--ease); }
+.in .flow .wire { stroke-dashoffset: 0; }
+.flow .pkt { fill: var(--amber); opacity: 0; }
+.in .flow .pkt { opacity: 1; }
+.chips { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 10px; }
+.chips span { padding: 10px 16px; border-radius: 999px; border: 1px solid #3a352d; font: 700 13px/1 var(--cond); letter-spacing: .16em; text-transform: uppercase; color: #cfc7b8; }
+
+/* a hard colour block in the middle of the page */
+.sec.amber { background: var(--amber); color: #140f06; }
+.amber .eyebrow, .amber .eyebrow .n { color: #140f06; }
+.amber h2.big em { color: #140f06; }
+.amber p.sub { color: #3a2a0c; }
+.amber .flow .box { fill: #140f06; stroke: #140f06; }
+.amber .flow .ttl { fill: var(--ink); } .amber .flow .lbl { fill: #b8ab95; }
+.amber .flow .em { fill: #140f06; } .amber .flow .wire { stroke: #140f06; } .amber .flow .pkt { fill: #140f06; }
+.amber .chips span { border-color: #140f0655; color: #140f06; }
+
+/* ---------- close ---------- */
+.close { text-align: center; padding-bottom: 60px; }
+.close .eyebrow { justify-content: center; }
+.close h2.big { margin: 22px auto 0; }
+.close .ctas { margin-top: 40px; display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
+.run { margin: 46px auto 0; max-width: 560px; display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 22px; border-radius: 14px; background: #121009; border: 1px solid var(--line); text-align: left; }
+.run code { flex: 1; font: 500 15px/1.4 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #e8dfcf; white-space: pre-wrap; }
+.run code b { color: var(--amber); font-weight: 500; }
+.run button { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #3a352d; font: 700 12px/1 var(--cond); letter-spacing: .18em; }
+.run button:hover { border-color: var(--ink); }
+.wordmark { margin-top: 110px; font: 700 clamp(80px, 21vw, 420px)/.78 var(--cond); letter-spacing: -.02em; color: transparent; -webkit-text-stroke: 1.5px #3a352d; user-select: none; background: linear-gradient(180deg, #ffb54722, transparent 70%); -webkit-background-clip: text; background-clip: text; }
+.foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 26px var(--gut) 34px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+
+/* ---------- small screens ---------- */
+@media (max-width: 980px) {
+  .rail { display: none; }
+  .nav a.l { display: none; }
+  .hero, .story .pin, .sec { padding-left: var(--gut); }
+  .hero { grid-template-columns: 1fr; padding-top: 110px; }
+  .story .pin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; align-items: start; padding-top: 80px; }
+  .story .copy { height: 34vh; }
+  .story canvas { height: 46vh; }
+  .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .board-sec .wrap { grid-template-columns: 1fr; } .board-sec .side { gap: 12px; } .board-sec .device { order: -1; }
+  .note { max-width: none; } .note::before { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w, .beat p, .note, .stat { transition: none; opacity: 1; filter: none; transform: none; }
+  .marquee .track, .cue i, .hero .scanline { animation: none; }
+  .device { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="hairline" id="hairline" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Sections">
+  <a class="brand" href="#top" aria-label="Departures, to the top"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES</a>
+  <a class="l" href="#problem">Problem</a><a class="l" href="#maths">Maths</a><a class="l" href="#board">Board</a><a class="l" href="#proof">Proof</a>
+  <a class="pill solid live" href="/sim">Play the morning <span class="arr">→</span></a>
+</nav>
+
+<nav class="rail" aria-label="Story progress">
+  <a href="#top"><i></i>01<span>Departure</span></a>
+  <a href="#problem"><i></i>02<span>Problem</span></a>
+  <a href="#maths"><i></i>03<span>Maths</span></a>
+  <a href="#replan"><i></i>04<span>Re-plan</span></a>
+  <a href="#board"><i></i>05<span>Board</span></a>
+  <a href="#proof"><i></i>06<span>Proof</span></a>
+  <a href="#try"><i></i>07<span>Try it</span></a>
+</nav>
+
+<main>
+  <section class="hero" id="top" data-sec>
+    <div class="scanline" aria-hidden="true"></div>
+    <div>
+      <div class="eyebrow"><span class="n">01</span>An Alexa+ add-on</div>
+      <h1 data-words>Every morning is a <em>departure.</em></h1>
+      <p class="lede">A live departure board for the household morning. It learns how long things really take, gives everyone a real chance of making the door, and re-plans the moment someone slips.</p>
+      <div class="ctas"><a class="pill solid live" href="/sim">Play the morning <span class="arr">→</span></a><a class="pill ghost" href="#problem">How it works</a></div>
+    </div>
+    <div class="stage3d">
+      <div class="device" id="heroDevice"><div class="screen" id="heroScreen"></div></div>
+      <div class="reflect" aria-hidden="true"></div>
+    </div>
+    <div class="cue" aria-hidden="true"><i></i>SCROLL</div>
+  </section>
+
+  <div class="marquee" aria-label="Things the household says to Alexa"><div class="track" id="marquee"></div></div>
+
+  <section class="story" id="problem" data-sec data-story="problem">
+    <div class="pin">
+      <div class="copy">
+        <div class="beat"><div class="eyebrow"><span class="n">02</span>The problem</div><h2>You said <em>eight minutes.</em></h2><p>Isha's shower. It's what she always says.</p></div>
+        <div class="beat"><h2>It took <em>twelve.</em></h2><p>It usually does. People plan from the plan, not from last time.</p></div>
+        <div class="beat"><h2>Only <em>30%</em> finish on time.</h2><p>When students predicted when they would finish, about 3 in 10 made it by then.</p><p class="fine">Buehler, Griffin and Ross, 1994: the planning fallacy.</p></div>
+        <div class="beat"><h2>And it's never <em>one person.</em></h2><p>Her overrun lands on everyone's door. Three mornings, one gate.</p></div>
+      </div>
+      <canvas aria-hidden="true"></canvas>
+      <div class="count"><b>0</b>/4</div>
+    </div>
+  </section>
+
+  <section class="story" id="maths" data-sec data-story="maths">
+    <div class="pin">
+      <div class="copy">
+        <div class="beat"><div class="eyebrow"><span class="n">03</span>The maths</div><h2>A step is a <em>range,</em> not a number.</h2><p>Each person's step is a log-normal distribution: never negative, sometimes long. What they say is where it starts.</p></div>
+        <div class="beat"><h2>Every morning <em>teaches</em> it.</h2><p>Each real "I'm done" pulls the curve towards what happens. Five mornings in, her shower is planned at twelve, and the spread knows she underestimates.</p></div>
+        <div class="beat"><h2>Add the steps <em>together.</em></h2><p>A morning is a sum of steps. One distribution with the same mean and variance stands in for the sum (Fenton–Wilkinson), so the answer has a closed form.</p></div>
+        <div class="beat"><h2>Then ask the <em>door.</em></h2><p>The share of the curve before the gate is her chance of being ready. Tested against 100,000 simulated mornings: within 2 points.</p><p class="fine"><code>P = Φ((ln g − μ) / σ)</code></p></div>
+      </div>
+      <canvas aria-hidden="true"></canvas>
+      <div class="count"><b>0</b>/4</div>
+    </div>
+  </section>
+
+  <section class="story" id="replan" data-sec data-story="replan">
+    <div class="pin">
+      <div class="copy">
+        <div class="beat"><div class="eyebrow"><span class="n">04</span>The re-plan</div><h2>"She's still in the <em>shower.</em>"</h2><p>Eight more minutes, at 7:26. Her chance of making 7:48 falls through the floor.</p></div>
+        <div class="beat"><h2>Gentlest changes <em>first.</em></h2><p>Breakfast to go costs 1. Dad packing her bag costs 2. The dishwasher waiting costs 3. It searches cheapest first, and only what the family allowed.</p></div>
+        <div class="beat"><h2>The cheapest plan that <em>works.</em></h2><p>An exact search, checked against brute force on 1,000 random mornings. Alexa says what changed; one word undoes it.</p></div>
+      </div>
+      <canvas aria-hidden="true"></canvas>
+      <div class="count"><b>0</b>/3</div>
+    </div>
+  </section>
+
+  <section class="sec board-sec" id="board" data-sec data-reveal>
+    <div class="eyebrow"><span class="n">05</span>The board</div>
+    <h2 class="big" data-words>On the kitchen wall, <em>live.</em></h2>
+    <p class="sub">The same board, inside Alexa+ on an Echo Show. This one is replaying the demo morning at twenty times speed, worked out in your browser by the same code the server runs.</p>
+    <div class="wrap">
+      <div class="side l"><div class="note l n1"><b>Who's doing what</b>Split-flap letters, one row per person, readable from across the room.</div><div class="note l n4"><b>What changed</b>A re-route sweeps the board, the bag flies to Dad, and Alexa says why.</div></div>
+      <div class="device front" id="boardDevice"><div class="screen" id="boardScreen"></div></div>
+      <div class="side r"><div class="note r n2"><b>Their chance, live</b>Each curve is when they'll be ready; the filled part is before the gate.</div><div class="note r n3"><b>How late it could run</b>A soft tail on every lane: the honest 10 to 90% spread.</div></div>
+    </div>
+  </section>
+
+  <section class="sec" id="proof" data-sec data-reveal>
+    <div class="eyebrow"><span class="n">06</span>Proof</div>
+    <h2 class="big" data-words>Measured, <em>not claimed.</em></h2>
+    <p class="sub">Every number here comes from the test suite or the benchmark in the repository, run on a laptop.</p>
+    <div class="bento">
+      <div class="stat wide"><div class="v" data-count="100000">0</div><div class="k">simulated mornings</div><div class="d">The model's chance of making the gate matches them within 2 points.</div></div>
+      <div class="stat"><div class="v" data-count="1000">0</div><div class="k">brute-force checks</div><div class="d">The re-plan is the cheapest every time.</div></div>
+      <div class="stat"><div class="v" data-count="0.12" data-dp="2">0<small>ms</small></div><div class="k">median re-plan</div><div class="d">Worst 12.5 ms on 2,000 random mornings.</div></div>
+      <div class="stat"><div class="v" data-count="1800">0<small>/s</small></div><div class="k">requests, no errors</div><div class="d">One process, load-tested with 2,000 screens.</div></div>
+      <div class="stat"><div class="v" data-count="50">0</div><div class="k">tests</div><div class="d">Statistics, planner, speech, security, protocol.</div></div>
+      <div class="stat"><div class="v" data-count="24">0</div><div class="k">security checks</div><div class="d">Each one walked against the code in SECURITY.md.</div></div>
+      <div class="stat"><div class="v" data-count="84">0<small>kB</small></div><div class="k">the whole board</div><div class="d">One file, gzipped, nothing loaded from anywhere.</div></div>
+    </div>
+  </section>
+
+  <section class="sec amber" id="alexa" data-sec data-reveal>
+    <div class="eyebrow"><span class="n">··</span>Built for Alexa+</div>
+    <h2 class="big" data-words>Speak from <em>anywhere.</em></h2>
+    <p class="sub">Each thing a household says is one tool call to a self-hosted MCP server over Streamable HTTP. The board is an MCP App: Alexa shows it inline, or full screen on a tap.</p>
+    <svg class="flow" viewBox="0 0 1200 230" role="img" aria-label="Alexa+ calls the Departures MCP server; the server sends the board to the screen">
+      <rect class="box" x="0" y="40" width="300" height="150" rx="18" /><text class="ttl" x="30" y="95">Alexa+</text><text class="lbl" x="30" y="128">hears "I'm done"</text><text class="lbl" x="30" y="152">picks a tool</text>
+      <rect class="box" x="450" y="40" width="300" height="150" rx="18" /><text class="ttl" x="480" y="95">Departures</text><text class="lbl" x="480" y="128">MCP server, self-hosted</text><text class="lbl" x="480" y="152">learns · re-plans · speaks</text>
+      <rect class="box" x="900" y="40" width="300" height="150" rx="18" /><text class="ttl" x="930" y="95">The board</text><text class="lbl" x="930" y="128">MCP App on Echo Show</text><text class="lbl" x="930" y="152">or any TV at /board</text>
+      <path class="wire" id="w1" d="M300 115 C 360 115, 390 115, 450 115" /><path class="wire" id="w2" d="M750 115 C 810 115, 840 115, 900 115" />
+      <text class="em" x="318" y="96">tools/call</text><text class="em" x="776" y="96">ui:// board</text>
+      <circle class="pkt" r="5"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#w1" /></animateMotion></circle>
+      <circle class="pkt" r="5"><animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite"><mpath href="#w2" /></animateMotion></circle>
+    </svg>
+    <div class="chips"><span>Protocol 2025-11-25 · 2026-07-28</span><span>10 tools, output schemas</span><span>MCP App board</span><span>Self-hosted · Docker</span><span>Hash-only CSP</span><span>MIT licensed</span></div>
+  </section>
+
+  <section class="sec close" id="try" data-sec data-reveal>
+    <div class="eyebrow"><span class="n">07</span>Try it</div>
+    <h2 class="big" data-words>Leave on <em>time.</em></h2>
+    <div class="ctas"><a class="pill solid live" href="/sim">Play the demo morning <span class="arr">→</span></a><a class="pill ghost" href="#top">Back to the top</a></div>
+    <div class="run"><code><b>npm</b> install &amp;&amp; <b>npm</b> run demo</code><button type="button" id="copy">COPY</button></div>
+    <div class="wordmark" aria-hidden="true">DEPARTURES</div>
+  </section>
+</main>
+<footer class="foot"><span>Departures · an Alexa+ add-on · MIT licence</span><span>Fonts: Barlow, Barlow Condensed, Instrument Serif (SIL OFL)</span></footer>
+<script>/*SCRIPT*/</script>
+</body>
+</html>
