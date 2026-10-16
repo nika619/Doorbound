@@ -1,4 +1,4 @@
-// The story page: what Departures is, told as a scroll story in the house style (pinned stages, one idea
+// The story page: what Doorbound is, told as a scroll story in the house style (pinned stages, one idea
 // per beat, words that arrive, numbers that count). Every curve and number on it is computed here by the
 // same core the server runs; the boards on it replay the demo morning in the browser.
 
@@ -604,7 +604,7 @@ function startBoard(screen: HTMLElement) {
   if (screen.firstChild) return;
   const f = document.createElement('iframe');
   f.name = 'replay'; // the board reads this and acts out the demo morning itself
-  f.title = 'The Departures board, replaying the demo morning';
+  f.title = 'The Doorbound board, replaying the demo morning';
   f.setAttribute('sandbox', 'allow-scripts'); // an opaque origin: it can reach nothing here
   f.loading = 'lazy';
   f.srcdoc = __BOARD_HTML__;

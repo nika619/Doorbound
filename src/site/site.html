@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Departures: every morning is a departure</title>
+<title>Doorbound: every morning is a departure</title>
 <meta name="description" content="A live departure board for the household morning, on Alexa+. It learns how long things really take, gives each person a real chance of making the door, and re-plans the moment someone slips." />
 <link rel="icon" href="data:," />
 <style>
@@ -200,7 +200,7 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 50; pointer-event
 <div class="hairline" id="hairline" aria-hidden="true"></div>
 
 <nav class="nav" aria-label="Sections">
-  <a class="brand" href="#top" aria-label="Departures, to the top"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DEPARTURES</a>
+  <a class="brand" href="#top" aria-label="Doorbound, to the top"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z"/><rect x="3" y="26" width="26" height="2.4" rx="1.2"/></svg>DOORBOUND</a>
   <a class="l" href="#problem">Problem</a><a class="l" href="#maths">Maths</a><a class="l" href="#board">Board</a><a class="l" href="#proof">Proof</a>
   <a class="pill solid live" href="/sim">Play the morning <span class="arr">→</span></a>
 </nav>
@@ -301,9 +301,9 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 50; pointer-event
     <div class="eyebrow"><span class="n">··</span>Built for Alexa+</div>
     <h2 class="big" data-words>Speak from <em>anywhere.</em></h2>
     <p class="sub">Each thing a household says is one tool call to a self-hosted MCP server over Streamable HTTP. The board is an MCP App: Alexa shows it inline, or full screen on a tap.</p>
-    <svg class="flow" viewBox="0 0 1200 230" role="img" aria-label="Alexa+ calls the Departures MCP server; the server sends the board to the screen">
+    <svg class="flow" viewBox="0 0 1200 230" role="img" aria-label="Alexa+ calls the Doorbound MCP server; the server sends the board to the screen">
       <rect class="box" x="0" y="40" width="300" height="150" rx="18" /><text class="ttl" x="30" y="95">Alexa+</text><text class="lbl" x="30" y="128">hears "I'm done"</text><text class="lbl" x="30" y="152">picks a tool</text>
-      <rect class="box" x="450" y="40" width="300" height="150" rx="18" /><text class="ttl" x="480" y="95">Departures</text><text class="lbl" x="480" y="128">MCP server, self-hosted</text><text class="lbl" x="480" y="152">learns · re-plans · speaks</text>
+      <rect class="box" x="450" y="40" width="300" height="150" rx="18" /><text class="ttl" x="480" y="95">Doorbound</text><text class="lbl" x="480" y="128">MCP server, self-hosted</text><text class="lbl" x="480" y="152">learns · re-plans · speaks</text>
       <rect class="box" x="900" y="40" width="300" height="150" rx="18" /><text class="ttl" x="930" y="95">The board</text><text class="lbl" x="930" y="128">MCP App on Echo Show</text><text class="lbl" x="930" y="152">or any TV at /board</text>
       <path class="wire" id="w1" d="M300 115 C 360 115, 390 115, 450 115" /><path class="wire" id="w2" d="M750 115 C 810 115, 840 115, 900 115" />
       <text class="em" x="318" y="96">tools/call</text><text class="em" x="776" y="96">ui:// board</text>
@@ -318,10 +318,10 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 50; pointer-event
     <h2 class="big" data-words>Leave on <em>time.</em></h2>
     <div class="ctas"><a class="pill solid live" href="/sim">Play the demo morning <span class="arr">→</span></a><a class="pill ghost" href="#top">Back to the top</a></div>
     <div class="run"><code><b>npm</b> install &amp;&amp; <b>npm</b> run demo</code><button type="button" id="copy">COPY</button></div>
-    <div class="wordmark" aria-hidden="true">DEPARTURES</div>
+    <div class="wordmark" aria-hidden="true">DOORBOUND</div>
   </section>
 </main>
-<footer class="foot"><span>Departures · an Alexa+ add-on · MIT licence</span><span>Fonts: Barlow, Barlow Condensed, Instrument Serif (SIL OFL)</span></footer>
+<footer class="foot"><span>Doorbound · an Alexa+ add-on · MIT licence</span><span>Fonts: Barlow, Barlow Condensed, Instrument Serif (SIL OFL)</span></footer>
 <script>/*SCRIPT*/</script>
 </body>
 </html>
