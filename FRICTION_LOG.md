@@ -115,3 +115,49 @@ Environment: Windows 11, Node 24.14, no Amazon devices.
 - **Severity:** Low.
 - **Workaround:** Wrote a 2 kB view bridge with only the messages the board uses (`src/board/bridge.ts`), and a test that runs it against the official host-side `AppBridge` and a real MCP server, so it cannot drift from the specification unnoticed.
 - **Suggestion:** Ship a minimal view-side entry point (handshake, `tools/call`, display mode, size changes) that tree-shakes to a few kilobytes.
+
+---
+
+## 11. Alexa+: the MCP authentication page contradicts itself
+
+- **Date:** 16 Oct 2026
+- **Task:** Make Doorbound sign Alexa+ in the way the MCP toolkit expects, so it could be deployed as a real add-on.
+- **Steps:** Read "Authentication" (`/docs/alexaplus/add-ons/mcp-toolkit-authentication`), then the quickstart and the CLI reference for where the credentials go.
+- **Expected:** One list of requirements for the token endpoint and the 401 response.
+- **Actual:** The MUST list says to authenticate the client "via HTTP Basic Authentication"; the checklist on the same page allows "HTTP Basic or POST body credentials". The scopes are `mcp:resources` in one place and `mcp:resource` in the runtime table. The page says `WWW-Authenticate` in a 401 is unsupported, while the MCP 2025-11-25 authorization spec has clients discover the authorization server from exactly that header (`resource_metadata`). Nothing says whether a private server may skip auth.
+- **Severity:** Medium. Each of these decides whether Alexa+ can sign in at all, and none can be tested without add-on access.
+- **Workaround:** Implemented the strict reading of each: Basic or body (never both, never in the query), scope `mcp:service`, tokens of an hour or less, RFC 6749 errors, and both the `WWW-Authenticate` header and the RFC 9728 metadata, so either discovery path works. Tested end to end in CI.
+- **Suggestion:** One normative requirements table per tier, consistent scope names, a sentence on how this relates to the MCP spec's own discovery, and a public conformance check (like the MCP conformance suite) that an add-on developer can run before deploying.
+
+## 12. Alexa+: the CLI reference leaves out installing the CLI and what `addon.json` holds
+
+- **Date:** 16 Oct 2026
+- **Task:** Prepare a complete add-on package (listing text, images, sign-in) ready for `alexa-ai deploy`.
+- **Steps:** Read the Alexa AI CLI reference, the MCP quickstart and the Alexa+ Add-on API reference.
+- **Expected:** An install command, the `addon.json` schema, and where `--requires-auth` takes the token URL and client secret.
+- **Actual:** No install command on the CLI page. `addon.json` fields appear only as a summary in the quickstart; the API reference covers the REST API, not the file. `alexa-ai new mcp` has `--requires-auth`, `--auth-client-id` and `--auth-scopes`, but nothing for the token URL or the secret, and the account-linking config file has no documented schema.
+- **Severity:** Medium.
+- **Workaround:** Wrote ALEXA.md with everything Doorbound can supply (endpoint, scopes, token URL, listing text, images in every required size, privacy policy and terms) and an honest note about the prompts we could not see.
+- **Suggestion:** A JSON Schema for `addon.json` and for the account-linking config, published next to the CLI reference, and a `--auth-token-url` / `--auth-client-secret-env` pair on `alexa-ai new mcp`.
+
+## 13. Alexa+ rules: "Agent Skill" means two different things
+
+- **Date:** 16 Oct 2026
+- **Task:** Decide whether to build an "Agent Skill" as well as the MCP server.
+- **Steps:** Compared the track rules ("a working Agent Skill, or a self-hosted MCP server") with the MCP toolkit pages.
+- **Expected:** One meaning.
+- **Actual:** In the docs, the "Add-on Agent Skill" is a helper for coding agents (Claude Code, Kiro, Cursor) that scaffolds and deploys an add-on; it is not something an add-on ships. The rules read as if an Agent Skill were a kind of submission.
+- **Severity:** Low, but it costs a team a day if they guess wrong.
+- **Workaround:** Put the effort into what makes the add-on deployable (sign-in, listing kit, conformance) instead of a package of our own.
+- **Suggestion:** A sentence in the track rules on what counts as a "working Agent Skill" for judging.
+
+## 14. MCP conformance suite: written for the reference server
+
+- **Date:** 16 Oct 2026
+- **Task:** Run the official MCP conformance suite (`@modelcontextprotocol/conformance` 0.1.16) against Doorbound and put it in CI.
+- **Steps:** `npx @modelcontextprotocol/conformance server --url http://127.0.0.1:3939/mcp`.
+- **Expected:** A pass or fail per protocol feature the server offers.
+- **Actual:** 4 of 30 passed on the first run. Most scenarios call fixture tools and resources that only the suite's reference server has (`test_simple_text`, `test://static-text`); prompts, logging and completion scenarios fail on servers that rightly do not offer them; there is no option for an auth header; and the scenarios fire fast enough to hit any sensible rate limit (our server answered 429, which failed the DNS-rebinding scenario's "valid Host accepted" check).
+- **Severity:** Low (once understood).
+- **Workaround:** `scripts/conformance.mjs` runs the scenarios that apply, paced, and fails CI on any of them failing. All of them pass.
+- **Suggestion:** Skip scenarios for capabilities the server did not declare in `initialize`, mark fixture-only scenarios as such, and add `--header` for auth.
