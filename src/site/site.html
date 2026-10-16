@@ -180,7 +180,10 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 50; pointer-event
   .hero, .story .pin, .sec { padding-left: var(--gut); }
   .hero { grid-template-columns: 1fr; padding-top: 110px; }
   .story .pin { grid-template-columns: 1fr; grid-template-rows: auto 1fr; align-items: start; padding-top: 80px; }
-  .story .copy { height: 34vh; }
+  .story .copy { height: 40vh; }
+  .beat { justify-content: flex-start; gap: 14px; padding-top: 34px; }
+  .beat .eyebrow { position: absolute; top: 0; } /* the section label stays put above every beat */
+  .beat h2 { font-size: clamp(34px, 9.5vw, 46px); }
   .story canvas { height: 46vh; }
   .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .board-sec .wrap { grid-template-columns: 1fr; } .board-sec .side { gap: 12px; } .board-sec .device { order: -1; }

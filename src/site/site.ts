@@ -428,9 +428,10 @@ const maths: Draw = (ctx, w, h, p) => {
 /** 04: her chance falls; the search tries the gentlest fixes; the cheapest that works wins. */
 const replan: Draw = (ctx, w, h, p) => {
   const m = w * 0.04;
-  const r = Math.min(w, h) * 0.17;
-  const cx = m + r * 1.2;
-  const cy = h * 0.46;
+  const narrow = w < 640; // phones: the gauge on top, the options under it
+  const r = narrow ? Math.min(w * 0.16, h * 0.13) : Math.min(w, h) * 0.17;
+  const cx = narrow ? w / 2 : m + r * 1.2;
+  const cy = narrow ? r + 34 : h * 0.46;
   // the gauge: from where the morning started, down to the moment, then back up with the plan
   const fallT = expo(seg(p, 0.03, 0.22));
   const riseT = expo(seg(p, 0.72, 0.9));
@@ -439,11 +440,11 @@ const replan: Draw = (ctx, w, h, p) => {
   ring(ctx, cx, cy, r, value, color, pct(value), 'Isha · 7:48');
   label(ctx, riseT > 0.5 ? 'after the re-plan' : fallT > 0.5 ? '"eight more minutes"' : 'at the start', cx, cy - r - 28, C.dim, 13, 'center');
   // the search tree
-  const tx = cx + r * 1.6;
-  const nodeW = Math.min(360, w - tx - m - 20);
-  const nh = Math.min(84, h * 0.13);
-  const gap = nh * 0.45;
-  const top = cy - (NODES.length * nh + (NODES.length - 1) * gap) / 2;
+  const tx = narrow ? -80 + m : cx + r * 1.6;
+  const nodeW = narrow ? w - 2 * m : Math.min(360, w - tx - m - 100);
+  const nh = Math.min(84, h * 0.12);
+  const gap = nh * 0.4;
+  const top = narrow ? cy + r + 40 : cy - (NODES.length * nh + (NODES.length - 1) * gap) / 2;
   NODES.forEach((n, i) => {
     const show = expo(seg(p, 0.36 + i * 0.09, 0.44 + i * 0.09));
     if (show <= 0) return;
@@ -455,12 +456,14 @@ const replan: Draw = (ctx, w, h, p) => {
     const x = tx + 80 + (1 - show) * 30;
     ctx.globalAlpha = show * fade;
     // the branch
-    ctx.strokeStyle = chosen && settle > 0 ? C.amber : C.line;
-    ctx.lineWidth = chosen && settle > 0 ? 2.5 : 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx + r * 1.15, cy);
-    ctx.bezierCurveTo(tx + 20, cy, tx + 30, y + nh / 2, x, y + nh / 2);
-    ctx.stroke();
+    if (!narrow) {
+      ctx.strokeStyle = chosen && settle > 0 ? C.amber : C.line;
+      ctx.lineWidth = chosen && settle > 0 ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 1.15, cy);
+      ctx.bezierCurveTo(tx + 20, cy, tx + 30, y + nh / 2, x, y + nh / 2);
+      ctx.stroke();
+    }
     // the node
     ctx.beginPath();
     ctx.roundRect(x, y, nodeW, nh, 14);
@@ -475,7 +478,7 @@ const replan: Draw = (ctx, w, h, p) => {
     ctx.fillText(n.label, x + 18, y + nh * 0.72);
     big(ctx, pct(n.p), x + nodeW - 18, y + nh * 0.68, nh * 0.48, ok ? C.go : C.late, 'right');
     // a verdict mark
-    label(ctx, ok ? (chosen ? 'chosen' : 'works') : 'not enough', x + nodeW - 18, y + 24, ok ? C.go : C.late, 12, 'right');
+    if (!narrow) label(ctx, ok ? (chosen ? 'chosen' : 'works') : 'not enough', x + nodeW - 18, y + 24, ok ? C.go : C.late, 12, 'right');
   });
   ctx.globalAlpha = 1;
   if (seg(p, 0.74, 0.8) > 0) {
