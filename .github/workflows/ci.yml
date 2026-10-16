@@ -41,6 +41,7 @@ jobs:
     env:
       # A throwaway value for this job only; real deployments set their own.
       TOKEN: ci-only-not-a-secret-0123456789abcdef
+      OAUTH: ci-only-oauth-not-a-secret-0123456789
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -56,13 +57,16 @@ jobs:
         run: |
           docker run -d --name doorbound -p 3939:3939 --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges:true --memory 256m \
-            -e AUTH_TOKEN="$TOKEN" -e ALLOWED_HOSTS=localhost -e DEMO_SEED=1 doorbound
+            -e AUTH_TOKEN="$TOKEN" -e ALLOWED_HOSTS=localhost -e DEMO_SEED=1 \
+            -e OAUTH_CLIENT_ID=alexa-plus -e OAUTH_CLIENT_SECRET="$OAUTH" -e PUBLIC_URL=http://localhost:3939 doorbound
           for i in $(seq 1 30); do curl -sf http://localhost:3939/healthz && break; sleep 1; done
       - name: End-to-end smoke test against the container
         run: npm run smoke
         env:
           DOORBOUND_URL: http://localhost:3939
           AUTH_TOKEN: ${{ env.TOKEN }}
+          OAUTH_CLIENT_ID: alexa-plus
+          OAUTH_CLIENT_SECRET: ${{ env.OAUTH }}
       - name: Container logs
         if: failure()
         run: docker logs doorbound
