@@ -2,14 +2,14 @@
 
 **The household's morning, as a live departure board on Alexa+.** Who is doing what, each person's real chance of making the door on time, and a new plan the moment someone slips.
 
-![The board, just after a re-route: Isha's shower ran over, so her breakfast is to go and Dad packs her bag](docs/board-rerouted.jpg)
+![The board re-routing live: an amber scan crosses the runway, Isha's bag lifts out of her lane and lands in Dad's, and her chance climbs back](docs/reroute.gif)
 
 > "Alexa, start the school run. We leave in 36 minutes."
 > "I'm done with breakfast."
 > "Isha's still in the shower. Eight more minutes, she says."
 > **Alexa:** "Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha. Everyone still leaves at 7:48, and Isha is now at 89%."
 
-Built for the Build, Ship, Shape: Amazon Developer Hackathon, Alexa+ track. A self-hosted MCP server over Streamable HTTP (protocol 2025-11-25, and 2026-07-28 for clients that negotiate it), with an MCP App that is the board.
+Built for the Build, Ship, Shape: Amazon Developer Hackathon, Alexa+ track. A self-hosted MCP server over Streamable HTTP (protocol 2025-11-25, and 2026-07-28 for clients that negotiate it), with an MCP App that is the board. Run it and open http://localhost:3939 for the story, or http://localhost:3939/sim to talk to it.
 
 ## The problem
 
