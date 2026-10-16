@@ -6,7 +6,10 @@
 // "now" line). Per second: text and geometry that actually changed. On a re-plan: blocks glide to
 // their new place (FLIP from positions we already hold, so no layout reads).
 
-import { everyoneOnTime, laneTimeline, projectLane, type Change, type Lane, type LaneView } from '../core/departure.ts';
+import { everyoneOnTime, laneMoments, laneTimeline, projectLane, type Change, type Departure, type Lane, type LaneView } from '../core/departure.ts';
+import { DEMO_MORNING, demoStep, household as demoHousehold, learnedHistory } from '../core/fixtures.ts';
+import { insights } from '../core/learn.ts';
+import { quantile, sum } from '../core/stats.ts';
 import { Bridge, windowPort } from './bridge.ts';
 
 // ---------- data ----------
@@ -143,6 +146,13 @@ function chime() {
 
 // ---------- split-flap ----------
 
+/** One half of a letter: the top or bottom half of `ch`. */
+function half(cls: string, ch: string) {
+  const h = el('span', cls);
+  el('span', '', h, ch);
+  return h;
+}
+
 class Flap {
   readonly root = el('span', 'flap');
   private chars: string[];
@@ -153,7 +163,7 @@ class Flap {
   ) {
     this.chars = Array(width).fill(' ');
     this.root.setAttribute('aria-hidden', 'true');
-    for (let i = 0; i < width; i++) el('span', 'cell blank', this.root).append(el('span', 'ch', undefined, ' '));
+    for (let i = 0; i < width; i++) el('span', 'cell blank', this.root).append(half('h t', ' '), half('h b', ' '));
   }
   set(text: string, tone: string, align: 'left' | 'right' = 'left') {
     if (this.root.dataset.tone !== tone) this.root.dataset.tone = tone;
@@ -164,12 +174,29 @@ class Flap {
       if (next[i] === this.chars[i]) continue;
       this.chars[i] = next[i];
       const cell = this.root.children[i] as HTMLElement;
+      const [top, bottom] = cell.children as unknown as [HTMLElement, HTMLElement];
+      const old = top.textContent ?? ' ';
       cell.classList.toggle('blank', next[i] === ' ');
-      // A fresh element starts its animation by itself: no forced reflow to restart one.
-      const still = reduced.matches || this.quiet;
-      const ch = el('span', still ? 'ch' : 'ch in', undefined, next[i]);
-      if (!still) ch.style.animationDelay = `${changed * 20}ms`;
-      cell.replaceChildren(ch);
+      top.firstElementChild!.textContent = next[i];
+      if (reduced.matches || this.quiet) bottom.firstElementChild!.textContent = next[i];
+      else {
+        // The old top half falls away, then the new bottom half swings down over the old one.
+        // Fresh elements start their own animations: no forced reflow to restart one.
+        const fall = half('h t fall', old);
+        const land = half('h b land', next[i]);
+        fall.style.animationDelay = `${changed * 20}ms`;
+        land.style.animationDelay = `${150 + changed * 20}ms`;
+        land.addEventListener(
+          'animationend',
+          () => {
+            bottom.firstElementChild!.textContent = top.textContent;
+            fall.remove();
+            land.remove();
+          },
+          { once: true },
+        );
+        cell.append(fall, land);
+      }
       changed++;
     }
     if (!this.quiet) clatter(changed);
@@ -178,7 +205,9 @@ class Flap {
 
 // ---------- the board ----------
 
-let bridge = window.parent !== window ? new Bridge(windowPort()) : null;
+/** The demo morning, acted out in the page by the same core, with no server: for the story page and a public preview. */
+const replayMode = window.name === 'replay' || location.hash === '#replay';
+let bridge = window.parent !== window && !replayMode ? new Bridge(windowPort()) : null;
 const screenKey = new URLSearchParams(location.hash.slice(1)).get('k'); // the fragment never reaches a server log
 let board: Board | null = null;
 
@@ -189,8 +218,11 @@ interface Row {
   then: HTMLElement;
   status: Flap;
   chance: Flap;
-  meter: HTMLElement;
-  fill: HTMLElement;
+  curve: SVGSVGElement;
+  area: SVGPathElement;
+  line: SVGPathElement;
+  gate: SVGLineElement;
+  tone: string;
   ready: HTMLElement;
   done: HTMLButtonElement;
   label: HTMLElement;
@@ -243,7 +275,72 @@ function statusOf(v: LaneView, dep: Dep, t: number): [string, string] {
   if (v.status === 'tight') return ['TIGHT', 'tight'];
   return v.status === 'boarding' ? ['BOARDING', 'board'] : ['ON TIME', 'ok'];
 }
-/** The tone of a chance: what the meter and the numbers are coloured by. */
+/**
+ * When this person is likely to be ready: the density of their remaining time, from now (left) on,
+ * filled up to the gate. The filled share of the curve is their chance. Each curve is scaled to its own
+ * peak: the shape and the gate's place in it are what matter.
+ */
+function drawCurve(r: Row, d: { mu: number; sigma: number } | null, gateSec: number, tone: string) {
+  if (r.curve.dataset.tone !== tone) r.curve.dataset.tone = tone;
+  if (!d) {
+    r.area.setAttribute('d', '');
+    r.line.setAttribute('d', 'M0 45 H120');
+    r.gate.style.display = 'none';
+    return;
+  }
+  const xMax = Math.max(gateSec * 1.3, quantile(d, 0.995), 60);
+  const f = (x: number) => (x <= 0 ? 0 : Math.exp(-((Math.log(x) - d.mu) ** 2) / (2 * d.sigma ** 2)) / x);
+  const N = 60;
+  const ys: number[] = [];
+  for (let i = 0; i <= N; i++) ys.push(f((xMax * i) / N));
+  const peak = Math.max(...ys) || 1;
+  const pt = (i: number) => `${((120 * i) / N).toFixed(1)} ${(45 - (40 * ys[i]) / peak).toFixed(1)}`;
+  let path = `M${pt(0)}`;
+  for (let i = 1; i <= N; i++) path += ` L${pt(i)}`;
+  r.line.setAttribute('d', path);
+  const g = Math.max(0, Math.min(N, Math.floor((gateSec / xMax) * N)));
+  let fill = 'M0 45';
+  for (let i = 0; i <= g; i++) fill += ` L${pt(i)}`;
+  r.area.setAttribute('d', `${fill} L${((120 * g) / N).toFixed(1)} 45 Z`);
+  const gx = ((120 * gateSec) / xMax).toFixed(1);
+  r.gate.style.display = '';
+  r.gate.setAttribute('x1', gx);
+  r.gate.setAttribute('x2', gx);
+}
+
+const SWEEP: Record<string, string> = { ok: '#8fdcaa26', tight: '#ffb54730', late: '#ff6b4a33' };
+/** A band of light across a row, in the colour of what just happened to it. */
+function sweep(li: HTMLElement, tone: string) {
+  if (reduced.matches) return;
+  li.style.setProperty('--sweep', SWEEP[tone] ?? '#ffb54726');
+  li.classList.remove('sweep');
+  void li.offsetWidth; // shortcut: restarts the sweep with one reflow; rare (a change of standing or a re-route)
+  li.classList.add('sweep');
+}
+
+/** A re-route, choreographed: an amber scan crosses the runway, the people it touches light up. */
+function choreograph(rr: { changes: Change[] }) {
+  if (reduced.matches) return;
+  const layer = $('layer');
+  let scan = layer.querySelector<HTMLElement>('.scan');
+  if (!scan) scan = el('div', 'scan', layer);
+  scan.animate(
+    [
+      { transform: 'translateX(-160px)', opacity: 0 },
+      { opacity: 1, offset: 0.15 },
+      { opacity: 1, offset: 0.8 },
+      { transform: `translateX(${layer.clientWidth || 1646}px)`, opacity: 0 },
+    ],
+    { duration: 1100, easing: 'cubic-bezier(.16,1,.3,1)' },
+  );
+  const touched = new Set(rr.changes.flatMap((c) => [c.from, c.to].filter(Boolean) as string[]));
+  for (const id of touched) {
+    const r = rows.get(id);
+    if (r) setTimeout(() => sweep(r.li, 'tight'), 180);
+  }
+}
+
+/** The tone of a chance: what the curve and the numbers are coloured by. */
 const toneOf = (v: LaneView) => (v.status === 'ready' ? 'done' : v.status === 'late' ? 'late' : v.status === 'tight' ? 'tight' : 'ok');
 
 function rowFor(id: string, index: number): Row {
@@ -266,8 +363,19 @@ function rowFor(id: string, index: number): Row {
   const chance = new Flap(3, true);
   chance.root.classList.add('pct');
   chanceBox.append(chance.root);
-  const meter = el('div', 'meter', chanceBox);
-  const fill = el('i', '', meter);
+  const svg = (tag: string, parent: Element) => parent.appendChild(document.createElementNS('http://www.w3.org/2000/svg', tag));
+  const curve = svg('svg', chanceBox) as SVGSVGElement;
+  curve.setAttribute('class', 'curve');
+  curve.setAttribute('viewBox', '0 0 120 46');
+  curve.setAttribute('preserveAspectRatio', 'none');
+  const area = svg('path', curve) as SVGPathElement;
+  area.setAttribute('class', 'area');
+  const line = svg('path', curve) as SVGPathElement;
+  line.setAttribute('class', 'line');
+  const gate = svg('line', curve) as SVGLineElement;
+  gate.setAttribute('class', 'gate');
+  gate.setAttribute('y1', '0');
+  gate.setAttribute('y2', '46');
   const ready = el('span', 'ready', li);
   ready.setAttribute('aria-hidden', 'true');
   const done = el('button', 'done', li) as HTMLButtonElement;
@@ -297,7 +405,7 @@ function rowFor(id: string, index: number): Row {
     setDone(false);
     void act('step_done', { person: nameOf(id) });
   });
-  r = { li, sr, now, then, status, chance, meter, fill, ready, done, label };
+  r = { li, sr, now, then, status, chance, curve, area, line, gate, tone: '', ready, done, label };
   rows.set(id, r);
   return r;
 }
@@ -341,7 +449,7 @@ function structure() {
       setText(r.then, '');
       r.status.set('SCHEDULED', 'done');
       r.chance.set('', 'done');
-      r.fill.style.transform = 'scaleX(0)';
+      drawCurve(r, null, 0, 'done');
       setText(r.ready, '');
       setText(r.sr, `${p.name}: scheduled.`);
     }
@@ -388,7 +496,13 @@ function second(animate = false) {
   setText($('gate'), hhmm(dep.gateMs));
   setText($('gateK'), departed ? 'DEPARTED' : 'LEAVE');
   setText($('left'), departed ? 'CLOSED' : `${minsLeft} MIN`);
-  setText($('ghost'), departed ? '' : String(minsLeft));
+  const ghost = $('ghost');
+  const g = departed ? '' : String(minsLeft);
+  if (ghost.dataset.key !== g) {
+    ghost.dataset.key = g;
+    ghost.replaceChildren();
+    words(ghost, g);
+  }
 
   const seen = new Set<string>();
   const late: string[] = [];
@@ -410,8 +524,10 @@ function second(animate = false) {
       }
       r.status.set(status, tone);
       r.chance.set(v.status === 'ready' ? '' : pct(v.pOnTime), chanceTone, 'right');
-      if (r.meter.dataset.tone !== chanceTone) r.meter.dataset.tone = chanceTone;
-      r.fill.style.transform = `scaleX(${v.status === 'ready' ? 1 : v.pOnTime.toFixed(3)})`;
+      drawCurve(r, v.current ? sum([laneMoments(lane, t)]) : null, (dep.gateMs - t) / 1000, chanceTone);
+      // A change of standing sweeps the row in its new colour, so the eye goes to it.
+      if (r.tone && r.tone !== chanceTone && chanceTone !== 'done') sweep(r.li, chanceTone);
+      r.tone = chanceTone;
       setText(r.ready, hhmm(v.readyMs));
       if (r.ready.dataset.tone !== chanceTone) r.ready.dataset.tone = chanceTone;
       r.done.disabled = !v.current;
@@ -450,8 +566,12 @@ function second(animate = false) {
         blocks.set(b.key, blk);
       } else if (blk.x !== x || blk.y !== y || blk.w !== w) {
         if (animate && !reduced.matches && (Math.abs(blk.x - x) > 1 || blk.y !== y)) {
-          // FLIP from where it was (we hold the old position: no layout read).
-          blk.e.animate([{ transform: `translate3d(${blk.x}px,${blk.y}px,0)`, width: `${blk.w}px` }, { transform: `translate3d(${x}px,${y}px,0)`, width: `${w}px` }], { duration: 750, easing: 'cubic-bezier(.2,.8,.2,1)' });
+          // FLIP from where it was (we hold the old position: no layout read). A step handed to someone
+          // else lifts out of its lane, arcs over and lands in the new one.
+          const from = { transform: `translate3d(${blk.x}px,${blk.y}px,0)`, width: `${blk.w}px` };
+          const to = { transform: `translate3d(${x}px,${y}px,0)`, width: `${w}px` };
+          const lifted = { transform: `translate3d(${(blk.x + x) / 2}px,${Math.min(blk.y, y) - 34}px,0) scale(1.06)`, boxShadow: '0 22px 44px -10px #ffb54799', offset: 0.5 };
+          blk.e.animate(blk.y !== y ? [from, lifted, to] : [from, to], { duration: blk.y !== y ? 1150 : 800, delay: 220, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
         }
         blk.e.style.transform = `translate3d(${x}px,${y}px,0)`;
         blk.e.style.width = `${w}px`;
@@ -500,7 +620,7 @@ function footer(dep: Dep, late: string[], allReady: boolean) {
   const ins = board?.insights?.[0];
   if (ins) accent($('learned'), `Learned: ${ins.person}'s ${ins.step.toLowerCase()} takes `, `${Math.round(ins.learnedSec / 60)} minutes`, `, not ${Math.round(ins.statedSec / 60)}.`);
   else $('learned').replaceChildren();
-  setText($('tag'), rate > 1 ? `DEMO CLOCK ×${rate}` : '');
+  setText($('tag'), replayMode ? `REPLAY · CLOCK ×${rate}` : rate > 1 ? `DEMO CLOCK ×${rate}` : '');
   let card = document.querySelector<HTMLElement>('.reroute');
   const rr = dep.reroute;
   if (rr && rr.changes.length && !allReady) {
@@ -526,6 +646,7 @@ function footer(dep: Dep, late: string[], allReady: boolean) {
       if (fresh) {
         announce(`Re-routed. ${rr.changes.map(describe).join('. ')}.`);
         chime();
+        choreograph(rr);
       }
     }
   } else {
@@ -579,7 +700,7 @@ function cardView() {
 let mode: 'inline' | 'fullscreen' = 'fullscreen';
 function applyMode() {
   const host = bridge?.hostContext.displayMode;
-  mode = host === 'inline' || (host === undefined && innerWidth < 760) ? 'inline' : 'fullscreen';
+  mode = !replayMode && (host === 'inline' || (host === undefined && innerWidth < 760)) ? 'inline' : 'fullscreen';
   $('board').hidden = mode !== 'fullscreen';
   $('card').hidden = mode !== 'inline';
   if (mode === 'fullscreen') {
@@ -624,6 +745,60 @@ function adopt(next: Board, sentPerf: number) {
     structure();
     if (!first) second(true);
   } else cardView();
+}
+
+// ---------- replay: the demo morning acted out by the core, in the page ----------
+
+function replay() {
+  const RATE = 20;
+  const people = demoHousehold.people.map((p) => ({ id: p.id, name: p.name }));
+  const stated = demoHousehold.people.flatMap((p) => p.steps.map((s) => ({ personId: p.id, stepId: s.id, statedSec: s.statedSec })));
+  const names = new Map(demoHousehold.people.map((p) => [p.id, p]));
+  let h = learnedHistory();
+  let dep: Departure | null = null;
+  let next = 0;
+  let rev = 0;
+  let t0 = 0;
+  const begin = () => {
+    const d = new Date();
+    d.setHours(7, 12, 0, 0);
+    t0 = d.getTime();
+    h = learnedHistory();
+    dep = null;
+    next = 0;
+    syncServer = t0;
+    syncPerf = performance.now();
+    synced = true;
+    rate = RATE;
+  };
+  const publish = (t: number) =>
+    adopt(
+      {
+        rev: ++rev,
+        serverNowMs: t,
+        clockRate: RATE,
+        people,
+        departure: dep && { ...dep, reroute: dep.reroute && { atMs: dep.reroute.atMs, changes: dep.reroute.changes, stillLateSec: dep.reroute.stillLateSec, canUndo: false } },
+        insights: insights(h, stated)
+          .slice(0, 3)
+          .map((i) => ({ person: names.get(i.personId)!.name, step: names.get(i.personId)!.steps.find((s) => s.id === i.stepId)!.name, statedSec: i.statedSec, learnedSec: i.learnedSec })),
+      },
+      performance.now(),
+    );
+  begin();
+  setInterval(() => {
+    const t = now();
+    while (next < DEMO_MORNING.length && t >= t0 + DEMO_MORNING[next].at * 60_000) {
+      const at = t0 + DEMO_MORNING[next].at * 60_000;
+      dep = demoStep(dep, DEMO_MORNING[next++].act, at, h);
+      publish(at);
+    }
+    // Hold the finished board for a moment past the gate, then start the morning again.
+    if (dep && t > dep.gateMs + 90_000) {
+      begin();
+      publish(t0);
+    }
+  }, 100);
 }
 
 let failures = 0;
@@ -686,5 +861,6 @@ $('board').classList.toggle('readonly', !bridge);
 $('sound').hidden = !bridge; // only a touch screen can switch it, and only a touch unlocks audio
 applyMode();
 await document.fonts.ready;
-void poll();
+if (replayMode) replay();
+else void poll();
 requestAnimationFrame(frame);
