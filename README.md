@@ -8,10 +8,10 @@
 
 ![The board re-routing live: an amber scan crosses the runway, Isha's bag lifts out of her lane and lands in Dad's, and her chance climbs back](docs/reroute.gif)
 
-> "Alexa, start the school run. We leave in 36 minutes."
+> "Alexa, start the school run. We leave in 37 minutes."
 > "I'm done with breakfast."
-> "Isha's still in the shower. Eight more minutes, she says."
-> **Alexa:** "Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha. Everyone still leaves at 7:48, and Isha is now at 89%."
+> "Isha's still in the shower. Nine more minutes, she says."
+> **Alexa:** "Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha. Everyone still leaves at 7:49, and Isha is now at 90%."
 
 Built for the Build, Ship, Shape: Amazon Developer Hackathon, Alexa+ track. A self-hosted MCP server over Streamable HTTP (protocol 2025-11-25, and 2026-07-28 for clients that negotiate it), with an MCP App that is the board. Run it and open http://localhost:3939 for the story, or http://localhost:3939/sim to talk to it.
 
@@ -35,7 +35,7 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 
 ## The maths, in plain words
 
-Everything the board and Alexa say comes from one model, in `src/core/stats.ts` and `src/core/departure.ts`.
+Everything the board and Alexa say comes from one model, in `src/core/stats.ts`, `src/core/pace.ts` and `src/core/departure.ts`.
 
 1. **A step's length is a distribution, not a number.** Each person's step is log-normal: always positive, and it can run long but never negative. The stated time is a prior worth two mornings; each real morning pulls the estimate towards what happens. With stated time *s*, real durations *x₁…xₙ*, prior weight *k = 2* and prior spread *σ₀ = 0.35*:
 
@@ -45,9 +45,11 @@ Everything the board and Alexa say comes from one model, in `src/core/stats.ts` 
 
 2. **A step already under way** has used up some of its time. The time still to go is the remainder of a log-normal truncated at the time elapsed, in closed form: with *z = (ln e − μ)/σ*, E[T | T > e] = e^(μ+σ²/2) · Φ(σ − z) / Φ(−z). So a shower that is running long keeps a realistic remainder instead of "any second now".
 
-3. **A person's whole remaining morning** is a sum of such steps. The sum is matched by one log-normal with the same mean *M* and variance *V* (Fenton–Wilkinson): σ² = ln(1 + V/M²), μ = ln M − σ²/2. That gives, in closed form, their **chance of being ready by the gate**, Φ((ln g − μ)/σ), and their **ready-by time at 85% confidence**, e^(μ + 1.036σ). The household's chance is the product (people taken as independent).
+3. **A person's whole remaining morning** is a sum of such steps. The sum is matched by one log-normal with the same mean *M* and variance *V* (Fenton–Wilkinson): σ² = ln(1 + V/M²), μ = ln M − σ²/2. That gives, in closed form, their **chance of being ready by the gate**, Φ((ln g − μ)/σ), and their **ready-by time at 85% confidence**, e^(μ + 1.036σ). The household's chance is the product (different people taken as independent).
 
-4. **The re-plan is exact.** It finds the cheapest set of changes (quicker version 1, handoff 2, waits until after 3, skipped 4; at most one per step, never the step in progress) after which everyone is ready by the gate with at least 85% confidence; among equally cheap plans, the one most likely to get the whole household out. It is an iterative-deepening search over the changes, where each change updates two numbers per person in O(1), with two pruning rules that never cut off a better plan. When nothing gets everyone there, a binary search finds the least lateness any plan can reach, then the cheapest plan that reaches it (so Dad's dishwasher can wait, freeing him to take Isha's bag). A search budget bounds the work, with a greedy plan past it.
+4. **A slow morning is slow all the way through.** One person's steps share today's pace: ln Xⱼ = μⱼ + σⱼ(√ρ·Z + √(1−ρ)·Eⱼ), with Z the pace and ρ how strongly a household's steps move together. Every finished step is a reading of Z, and Z's posterior stays normal (conjugate); a step still running is censored evidence ("longer than 12 minutes so far"), folded in with the exact mean and variance of the skew-normal it gives. The steps still to come shift by σⱼ√ρ·E[Z] and share the uncertainty ρ·Var[Z] that is left, which widens their sum: Cov(Xᵢ, Xⱼ) = E[Xᵢ]E[Xⱼ](e^(ρ·Var[Z]·σᵢσⱼ) − 1). That double sum is kept as running power sums, Σₖ cᵏ/k!·(Aₖ² − Bₖ), so the re-planner can still try a change in O(1). ρ is learned from pairs of steps finished in the same morning (their standardised readings have E[rᵢrⱼ] = ρ), starting from 0.3. Ignore all this and a planner says 85% and delivers less; the board shows the pace as SLOW TODAY +20%.
+
+5. **The re-plan is exact.** It finds the cheapest set of changes (quicker version 1, handoff 2, waits until after 3, skipped 4; at most one per step, never the step in progress) after which everyone is ready by the gate with at least 85% confidence; among equally cheap plans, the one most likely to get the whole household out. It is an iterative-deepening search over the changes, where each change updates the running sums of at most two people in O(1), with two pruning rules that never cut off a better plan. When nothing gets everyone there, a binary search finds the least lateness any plan can reach, then the cheapest plan that reaches it (so Dad's dishwasher can wait, freeing him to take Isha's bag). A search budget bounds the work, with a greedy plan past it.
 
 The story page draws each of these from the real code as you scroll: the curve learning from five real mornings, the steps adding up, and the re-plan's search.
 
@@ -57,6 +59,8 @@ The story page draws each of these from the real code as you scroll: the curve l
 
 **How we know it is right** (all in `npm test`):
 
+- **Calibrated:** on 40,000 simulated mornings with a shared daily pace, looked at a random moment (usually mid-step), when it says 80–90% it happens **84.9%** of the time. Its calibration error is **0.39%**, as low as the log-normal sum allows (0.37% when steps really are independent); the same model with steps taken as independent is off by 2.44%.
+- The pace posterior and the censored update match numerical integration to 1e-5; the running sums match the exact covariance to 1e-4.
 - The chance of making the gate matches **100,000 simulated mornings** to within 2 percentage points, mid-morning with a step half done.
 - The truncated remainder's mean and spread match simulation to within 2% and 4%; the sum matches 200,000 simulated mornings to within 2 points.
 - The re-plan equals the **brute-force optimum on 1,000 random mornings**, and holds its guarantees on 2,000 more: nobody on time is made late, only allowed changes are made, a step in progress is never touched, nothing is lost, the same input gives the same plan.
@@ -69,14 +73,14 @@ On a Windows 11 laptop, Node 24 (`tsx scripts/bench.ts`, and `tsx scripts/bench.
 
 | | p50 | p95 | worst |
 |---|---|---|---|
-| Re-plan, 2,000 random mornings (1-5 people) | 0.12 ms | 4.8 ms | 12.5 ms |
-| Re-plan, a household at the limits (8 people × 15 steps, 1,200 candidate changes) | 76 ms | 93 ms | 99 ms |
-| The board's work each second (3 people) | 4 µs | 8 µs | |
-| Board poll under load: 300 screens + 30 speakers for 20 s | 0.8 ms | 2.9 ms | 70 ms |
-| Tool call under the same load | 3.0 ms | 4.3 ms | 5.8 ms |
-| Memory of one running server (one household) | about 80 MB | | |
+| Re-plan, 2,000 random mornings (1-5 people) | 0.19 ms | 7.8 ms | 19.4 ms |
+| Re-plan, a household at the limits (8 people × 15 steps, 1,200 candidate changes) | 54 ms | 59 ms | 67 ms |
+| The board's work each second (3 people, today's pace included) | 11 µs | 18 µs | |
+| Board poll under load: 300 screens + 30 speakers for 20 s | 1.5 ms | 5.3 ms | 84 ms |
+| Tool call under the same load | 4.1 ms | 6.5 ms | 9.5 ms |
+| Memory of one running server (one household) | about 72 MB | | |
 
-Zero errors in the load test. Pushed to 2,000 screens, one process served about 1,800 requests a second (load generator on the same laptop) before latency rose, still with no errors. A household needs a few requests a second. An unchanged poll is answered with an empty 204; the board page is one 84 kB (gzipped) file with no external requests, and the story page, with the whole board inside it, is 174 kB.
+Zero errors in the load test. Pushed to 2,000 screens, one process served about 1,830 requests a second (load generator on the same laptop; poll p95 20 ms), still with no errors. Re-measured on Oct 16, 2026, after the pace model went in. A household needs a few requests a second. An unchanged poll is answered with an empty 204; the board page is one 85 kB (gzipped) file with no external requests, and the story page, with the whole board inside it, is 176 kB.
 
 ## Run it
 
@@ -128,7 +132,7 @@ The MCP endpoint is `/mcp`; the board is the resource `ui://doorbound/board.html
 npm test
 ```
 
-50 tests: the statistics against simulation, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
+56 tests: the statistics against simulation, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
 
 ```bash
 npm run smoke
@@ -173,7 +177,8 @@ The server refuses to start beyond loopback without a token and a host allow-lis
 
 ## Limits, honestly
 
-- People's mornings are treated as independent. A shared delay (everyone overslept) is not modelled.
+- One person's steps share a pace; different people's mornings are treated as independent. A delay shared by everyone (the whole house overslept) is not modelled.
+- ρ starts at 0.3 by assumption and is learned from the household's own mornings; the step in progress is tied to the pace to first order (the delta method), exact at its start.
 - Fenton–Wilkinson is an approximation; the tests bound its error, they do not make it exact.
 - It learns from the last nine mornings per person and step; one strange morning moves it, a few correct it.
 - The simulator's router is a small rule set standing in for Alexa+'s language model, which in Alexa+ reads the tool descriptions itself.
