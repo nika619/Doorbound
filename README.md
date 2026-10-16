@@ -19,11 +19,11 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 
 ## What it does
 
-- **A board for the kitchen screen.** One row per person: what they are doing, what is next, a status (ON TIME, TIGHT, DELAYED), their chance of being ready by the gate, and the time they will be ready by. Below, a runway: everyone's remaining steps laid out to the gate, with a soft tail showing how late it could realistically run.
+- **A board for the kitchen screen.** One row per person in split-flap letters: what they are doing, what is next, a status (ON TIME, TIGHT, DELAYED), their chance of being ready by the gate drawn as a live curve (the filled part is before the gate), and the time they will be ready by. Below, a runway: everyone's remaining steps laid out to the gate, with a soft tail showing how late it could realistically run.
 - **It learns.** Every "I'm done" is a real duration. After a few mornings the plan uses what actually happens, not what was said ("Isha's shower takes *12 minutes*, not 8").
 - **It re-plans within the household's rules.** When someone falls behind, it finds the gentlest set of changes the household allows: a quicker version (breakfast to go), someone else takes a step (Dad packs the bag), a step waits until after leaving (the dishwasher), or is skipped. Alexa says what changed; one word undoes it.
 - **Anyone, from anywhere.** "I'm done." "She's still in the shower." "We need to leave ten minutes early." "How are we doing?" "What have you learned?" Each is one tool call.
-- **On the Echo Show and beyond.** A small card inside the conversation, the full board on a tap, and the same board on a TV at `/board` (read-only).
+- **On the Echo Show and beyond.** A small card inside the conversation, the full board on a tap, and the same board on a TV at `/board` (read-only). `/board#replay` plays the demo morning in the browser with no server state at all.
 
 ![Before the news: the board has already noticed Isha's shower running long and marks her TIGHT](docs/board-tight.jpg)
 
