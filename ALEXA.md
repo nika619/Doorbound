@@ -1,6 +1,8 @@
 # Doorbound on real Alexa+
 
-Doorbound is an Alexa+ add-on built with Amazon's MCP toolkit: Alexa+ is the MCP client, Doorbound the server. This is how to put it in front of Alexa+. It needs an Amazon developer account and a public HTTPS address; everything else is in this repository.
+Doorbound is an Alexa+ add-on built with Amazon's MCP toolkit: Alexa+ is the MCP client, Doorbound the server. This is how to put it in front of Alexa+. It needs an Amazon developer account **with access to Alexa+ add-on development** and a public HTTPS address; everything else is in this repository.
+
+**Access first.** When we checked (Oct 13, 2026; FRICTION_LOG.md, entry 1), Amazon's docs home and the hackathon FAQ said the add-on tools were open to partners only. Try `alexa-ai configure` with your account; if it is not let in, the repository's simulator (`/sim`), a real MCP client with the MCP Apps host bridge, is the way to see Doorbound, as the hackathon rules allow.
 
 ## What Alexa+ asks of an MCP server, and where Doorbound stands
 
@@ -84,4 +86,4 @@ Then open your add-on in the developer console (https://developer.amazon.com/ale
 
 Set the household up by voice ("Isha showers for 8 minutes, then gets dressed for 6..."; "Isha's breakfast can be to go in 2 minutes"; "Dad can pack Isha's bag"), then start a departure.
 
-**Not yet done by us:** the deploy itself. It needs Mayank's Amazon developer account; everything the server side can prove is proven in CI (conformance, the OAuth sign-in end to end, the locked-down container).
+**Not yet done by us:** the deploy itself, which needs an account with add-on access. Everything the server side can prove is proven in CI: the conformance suite, the OAuth sign-in end to end, and the locked-down container.
