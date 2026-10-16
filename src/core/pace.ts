@@ -136,19 +136,124 @@ export function total(acc: Float64Array, c: number): Moments {
 export interface PaceStats {
   products: number;
   pairs: number;
+  /** The same for pairs of readings from different people in one morning (the household's shared pace). */
+  crossProducts?: number;
+  crossPairs?: number;
 }
 
 /** The household's rho: the pairs' mean product, shrunk towards RHO_PRIOR, kept in [0, RHO_MAX]. */
 export const rhoOf = (s: PaceStats) => Math.max(0, Math.min(RHO_MAX, (PRIOR_PAIRS * RHO_PRIOR + s.products) / (PRIOR_PAIRS + s.pairs)));
 
 /** A new reading `r`, paired with the same person's earlier readings this morning. O(n). */
-export function recordPace(s: PaceStats, earlier: readonly number[], r: number): void {
+export function recordPace(s: PaceStats, earlier: readonly number[], r: number, others: readonly number[] = []): void {
   for (const e of earlier) {
     s.products += e * r;
     s.pairs++;
+  }
+  for (const o of others) {
+    s.crossProducts = (s.crossProducts ?? 0) + o * r;
+    s.crossPairs = (s.crossPairs ?? 0) + 1;
   }
   if (s.pairs > PAIRS_KEPT) {
     s.products /= 2;
     s.pairs /= 2;
   }
+  if ((s.crossPairs ?? 0) > PAIRS_KEPT) {
+    s.crossProducts! /= 2;
+    s.crossPairs! /= 2;
+  }
+}
+
+// ---------- the household's shared pace ----------
+//
+// Whole households have slow mornings too (a late night, a storm, a Monday). So each person's pace is
+// itself part shared: Z_p = sqrt(kappa) W + sqrt(1 - kappa) U_p, with W the household's pace. Two people's
+// readings then have E[r_p r_q] = rho kappa, which is how kappa is learned; it starts at 0, so nothing
+// changes until a household's own mornings show the link. The posterior over all of Z_1..Z_P is again
+// normal: readings are linear in it (exact), and each step still running is a censored reading, folded in
+// one at a time by the same moment match as censor() (assumed-density filtering). With kappa 0 every
+// person's pace is exactly what paceOf and censor() give alone.
+
+/** Ceiling on how strongly different people's mornings move together. */
+export const KAPPA_MAX = 0.9;
+/** kappa's prior, 0, counts as this many cross pairs. */
+const PRIOR_CROSS = 20;
+
+/** The household's kappa from cross pairs: their mean product over rho, shrunk towards 0. */
+export const kappaOf = (s: PaceStats, rho: number) =>
+  rho <= 0 ? 0 : Math.max(0, Math.min(KAPPA_MAX, (s.crossProducts ?? 0) / rho / (PRIOR_CROSS + (s.crossPairs ?? 0))));
+
+/** A step in progress: its learned log-normal and how long it has run. */
+export interface Running {
+  d: LogNormal;
+  elapsedSec: number;
+}
+
+/** Inverse of a small symmetric positive-definite matrix, Gauss-Jordan. O(P^3), P <= 8. */
+function inverse(a: number[][]): number[][] {
+  const n = a.length;
+  const m = a.map((row, i) => [...row, ...row.map((_, j) => (i === j ? 1 : 0))]);
+  for (let c = 0; c < n; c++) {
+    const piv = m[c][c];
+    for (let j = 0; j < 2 * n; j++) m[c][j] /= piv;
+    for (let r = 0; r < n; r++)
+      if (r !== c) {
+        const f = m[r][c];
+        if (f) for (let j = 0; j < 2 * n; j++) m[r][j] -= f * m[c][j];
+      }
+  }
+  return m.map((row) => row.slice(n));
+}
+
+/** Fold in "person p's step has run elapsedSec and is not done": the multivariate form of censor(). O(P^2). */
+function censorJoint(mu: number[], S: number[][], p: number, run: Running, rho: number): void {
+  if (run.elapsedSec <= 0) return;
+  const b = Math.sqrt(rho / (1 - rho));
+  const a = (run.d.mu - Math.log(run.elapsedSec)) / (run.d.sigma * Math.sqrt(1 - rho));
+  const s2 = 1 + b * b * S[p][p];
+  const k = Math.max(-30, (a + b * mu[p]) / Math.sqrt(s2));
+  const lambda = Math.exp(-k * k / 2) / Math.sqrt(2 * Math.PI) / phi(k);
+  const col = S.map((row) => row[p]);
+  const shift = (b * lambda) / Math.sqrt(s2);
+  const shrink = ((b * b) / s2) * lambda * (lambda + k);
+  for (let i = 0; i < mu.length; i++) {
+    mu[i] += col[i] * shift;
+    for (let j = 0; j < mu.length; j++) S[i][j] -= col[i] * col[j] * shrink;
+  }
+}
+
+/**
+ * Today's pace for everyone at once. `before[p]` leaves out p's own running step (it is what that step is
+ * conditioned on, before its elapsed time is applied to it), `ahead[p]` has everything (for the steps after it).
+ */
+export function householdPace(readingsBy: readonly (readonly number[])[], running: readonly (Running | null)[], rho: number, kappa: number): { before: Pace[]; ahead: Pace[] } {
+  const P = readingsBy.length;
+  const ns = readingsBy.map((r) => r.length);
+  if (rho <= 0) {
+    const flat = ns.map((n) => ({ z: 0, v: 1, n }));
+    return { before: flat, ahead: flat };
+  }
+  const k = Math.min(Math.max(kappa, 0), KAPPA_MAX);
+  // Prior precision: the inverse of (1 - k) I + k J is (I - k / (1 - k + k P) J) / (1 - k) (Sherman-Morrison).
+  const off = -k / (1 - k + k * P) / (1 - k);
+  const lam = ns.map((n, i) => ns.map((_, j) => (i === j ? 1 / (1 - k) + off + (n * rho) / (1 - rho) : off)));
+  const S0 = inverse(lam);
+  const h = readingsBy.map((r) => (Math.sqrt(rho) * r.reduce((a, x) => a + x, 0)) / (1 - rho));
+  const mu0 = S0.map((row) => row.reduce((a, x, j) => a + x * h[j], 0));
+  const run = (skip: number) => {
+    const mu = [...mu0];
+    const S = S0.map((row) => [...row]);
+    running.forEach((r, p) => {
+      if (r && p !== skip) censorJoint(mu, S, p, r, rho);
+    });
+    return { mu, S };
+  };
+  const all = run(-1);
+  const ahead = ns.map((n, p) => ({ z: all.mu[p], v: all.S[p][p], n }));
+  const before = ns.map((n, p) => {
+    if (!running[p]) return ahead[p];
+    const o = run(p);
+    return { z: o.mu[p], v: o.S[p][p], n };
+  });
+  return { before, ahead };
 }
