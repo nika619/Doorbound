@@ -1,6 +1,6 @@
 # Security
 
-Departures runs in people's homes and hears about their children's mornings, so it is built to keep that to itself. This page walks a 19-point pre-launch checklist for apps built with AI help, item by item, with the code that backs each answer. "N/A" means the app has no such surface, and says why.
+Departures runs in people's homes and hears about their children's mornings, so it is built to keep that to itself. This page walks a 19-point pre-launch checklist for apps built with AI help, then five money-and-legal risks, item by item, with the code that backs each answer. "N/A" means the app has no such surface, and says why.
 
 To report a problem, open a private security advisory on the GitHub repository rather than a public issue.
 
@@ -33,6 +33,18 @@ To report a problem, open a private security advisory on the GitHub repository r
 | 17 | AI security review | Pass | Claude reviewed the server code route by route while writing this page (Oct 15, 2026) and found nothing beyond what this table lists. A complement to items 1-16, not a substitute. |
 | 18 | Security headers | Pass | Every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy` and `-Resource-Policy: same-origin`, a `Permissions-Policy` that turns off camera, location, microphone, payment and USB (`baseHeaders`). Pages add a hash-only Content Security Policy: `default-src 'none'`, scripts and styles allowed only by the SHA-256 of the exact blocks built into the page, no `unsafe-inline`, no framing (`pageCsp`; hashes from `scripts/build.mjs`). Checked by `npm run smoke`. |
 | 19 | Verify webhook signatures | N/A | No webhooks. |
+
+## Money and legal exposure
+
+Five risks of AI-built apps that cost money or invite lawsuits without anyone breaking in.
+
+| # | Risk | Status | How |
+|---|---|---|---|
+| 20 | A traffic spike becomes a bandwidth bill | Pass | Self-hosted, so no per-gigabyte platform bill by default. Everything served is small: the board is one 79 kB (gzipped) page, an unchanged poll is an empty 204, and every client is rate-limited. No media files. If you put it on a metered host, front it with a CDN or WAF and set the host's usage alerts and caps. |
+| 21 | Accessibility (WCAG 2.1 AA) | Pass, with one limit | Every control is a real `<button>` with a visible focus ring; the Done button's accessible name says whose step it marks ("Done: Isha"), and on the first tap it becomes "Tap again to confirm". Each row has a screen-reader sentence and changes are announced through an `aria-live` region. No meaning is carried by colour alone (statuses and chances are words and numbers). Text contrast is at least 4.5:1 for small text and 3:1 for large labels, measured (the faint label colour was raised from 2.7:1 to 4.2:1 for that). Reduced motion turns off every animation. The limit: with eight people on one screen the Done buttons shrink below the 44 px touch-target guideline; voice still works for everyone. |
+| 22 | A public key that reads every user's data | N/A | No database and no keys in any page. The screen key only lets a TV read its own household's board, and it travels in the URL fragment, which browsers never send to a server. |
+| 23 | Messages sent without consent | N/A | Departures sends no SMS, email or notifications. Alexa speaks only in reply to the household. |
+| 24 | Runaway compute | Pass | No recursion and no fan-out: a re-plan is capped at 20,000 plans (worst measured 99 ms at the household limits), the server makes no outbound calls, and everything kept is bounded: 8 people x 15 steps, 9 samples per step, an audit log rotated at 1 MB. |
 
 ## Beyond the checklist
 
