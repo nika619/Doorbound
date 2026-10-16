@@ -5,7 +5,7 @@
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { readings, reading, recordPace, rhoOf } from '../core/pace.ts';
+import { kappaOf, readings, reading, recordPace, rhoOf } from '../core/pace.ts';
 import { planStarts } from '../core/tomorrow.ts';
 import { honesty, noteForecasts, settle } from '../core/score.ts';
 import { currentIndex, currentRemaining, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
@@ -311,7 +311,8 @@ export function buildServer(ctx: Ctx): McpServer {
       const gateMs = gateFrom(at, now);
       if (gateMs <= now) return refuse(`${at} has already passed today. Say a later time.`);
       if (gateMs - now > 6 * 3_600_000) return refuse('That is more than six hours away. Start the departure closer to the time.');
-      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rhoOf(ctx.store.pace));
+      const rho = rhoOf(ctx.store.pace);
+      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho));
       const rerouted = commit(ctx, 'start_departure', dep, undefined, hh.people.map((p) => p.id));
       return say(ctx, `${dep.name} started. ${summary(ctx, ctx.store.departure!, rerouted)}`);
     },
@@ -336,11 +337,12 @@ export function buildServer(ctx: Ctx): McpServer {
       const task = lane?.tasks.find((t) => t.state === 'todo');
       const finished = task?.name;
       const earlier = lane ? readings(lane) : [];
+      const others = dep.lanes.flatMap((l) => (l.personId === p.id ? [] : readings(l)));
       const r = markDone(dep, p.id, ctx.now());
       if (!r) return refuse(`${p.name} has nothing left to do. ${p.name} is ready to go.`);
       if (r.sample) {
         record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
-        if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds));
+        if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others);
       }
       const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
       const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;

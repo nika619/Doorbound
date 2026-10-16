@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import * as z from 'zod/v4';
 import type { Departure, Household } from '../core/departure.ts';
 import { WINDOW, type History } from '../core/learn.ts';
-import { RHO_MAX, RHO_PRIOR, type PaceStats } from '../core/pace.ts';
+import { KAPPA_MAX, RHO_MAX, RHO_PRIOR, type PaceStats } from '../core/pace.ts';
 import { SCORES_KEPT, type Score } from '../core/score.ts';
 
 export const LIMITS = { people: 8, steps: 15, name: 32, helpers: 7, historyKeys: 8 * 15 * 2 } as const;
@@ -46,7 +46,7 @@ export const taskSchema = z.object({
 });
 export const laneSchema = z.object({ personId: id, startedAtMs: ms, tasks: z.array(taskSchema).max(LIMITS.people * LIMITS.steps) });
 export const changeSchema = z.object({ kind: z.enum(['quick', 'handoff', 'later', 'skip']), taskKey: z.string().max(80), name, from: id, to: id.optional(), savedSec: z.number().int() });
-const departureCore = z.object({ name, gateMs: ms, startedAtMs: ms, rev: z.number().int().nonnegative(), lanes: z.array(laneSchema).max(LIMITS.people), rho: z.number().min(0).max(RHO_MAX).default(RHO_PRIOR), forecasts: z.array(z.object({ personId: id, p: z.number().min(0).max(1), atMs: ms })).max(256).optional() });
+const departureCore = z.object({ name, gateMs: ms, startedAtMs: ms, rev: z.number().int().nonnegative(), lanes: z.array(laneSchema).max(LIMITS.people), rho: z.number().min(0).max(RHO_MAX).default(RHO_PRIOR), kappa: z.number().min(0).max(KAPPA_MAX).default(0), forecasts: z.array(z.object({ personId: id, p: z.number().min(0).max(1), atMs: ms })).max(256).optional() });
 export const departureSchema = departureCore.extend({
   reroute: z
     .object({ atMs: ms, rev: z.number().int(), changes: z.array(changeSchema).max(LIMITS.people * LIMITS.steps), stillLateSec: z.number().int().nonnegative(), before: departureCore.extend({ reroute: z.null() }) })
@@ -59,7 +59,7 @@ const fileSchema = z.object({
   history: z.array(z.tuple([z.string().max(80), z.array(z.number().positive().max(86_400)).max(WINDOW)])).max(LIMITS.historyKeys),
   departure: departureSchema.nullable(),
   /** Added after version 2 shipped, so optional: an older file starts from the prior. */
-  pace: z.object({ products: z.number().finite(), pairs: z.number().nonnegative().finite() }).optional(),
+  pace: z.object({ products: z.number().finite(), pairs: z.number().nonnegative().finite(), crossProducts: z.number().finite().optional(), crossPairs: z.number().nonnegative().finite().optional() }).optional(),
   scores: z.array(z.tuple([z.number().min(0).max(1), z.union([z.literal(0), z.literal(1)])])).max(SCORES_KEPT).optional(),
 });
 
