@@ -1,0 +1,35 @@
+# One household's Departures on the internet, with HTTPS:
+#   DOMAIN=departures.example.com AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d
+# Then register https://$DOMAIN/mcp as the Alexa+ add-on's MCP endpoint, with AUTH_TOKEN as its bearer token.
+# Caddy fetches and renews the certificate for DOMAIN itself (ports 80 and 443 must reach this machine).
+services:
+  departures:
+    build: .
+    environment:
+      AUTH_TOKEN: ${AUTH_TOKEN:?set AUTH_TOKEN, 32 or more characters}
+      ALLOWED_HOSTS: ${DOMAIN:?set DOMAIN to the host name Alexa+ will call}
+      SCREEN_KEY: ${SCREEN_KEY:-}
+      TRUST_PROXY: "1"
+    volumes:
+      - departures-data:/data
+    # Nothing but /data is writable, no extra privileges, every capability dropped.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    command: caddy reverse-proxy --from ${DOMAIN} --to departures:3939
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+    depends_on: [departures]
+    restart: unless-stopped
+volumes:
+  departures-data:
+  caddy-data:
