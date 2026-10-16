@@ -519,9 +519,13 @@ function second(animate = false) {
     if (r) {
       r.now.set(v.current?.name ?? (v.status === 'ready' ? 'Ready to go' : ''), tone === 'late' ? 'late' : 'plain');
       const then = v.next?.name ?? (v.current ? 'out of the door' : '');
-      if (r.then.dataset.key !== then) {
-        r.then.dataset.key = then;
-        r.then.replaceChildren(...(then ? [el('b', '', undefined, 'THEN'), then] : []));
+      // Today's pace, once it is clear (15% or more), in 5% steps so it does not flicker.
+      const pc = v.current && Math.abs(v.pace) >= 0.15 ? Math.round(v.pace * 20) * 5 : 0;
+      const key = `${then}|${pc}`;
+      if (r.then.dataset.key !== key) {
+        r.then.dataset.key = key;
+        const tag = pc ? [el('i', `pace ${pc > 0 ? 'slow' : 'fast'}`, undefined, pc > 0 ? `SLOW TODAY +${pc}%` : `AHEAD ${pc}%`)] : [];
+        r.then.replaceChildren(...(then ? [el('b', '', undefined, 'THEN'), then] : []), ...tag);
       }
       r.status.set(status, tone);
       r.chance.set(v.status === 'ready' ? '' : pct(v.pOnTime), chanceTone, 'right');
@@ -532,7 +536,7 @@ function second(animate = false) {
       setText(r.ready, hhmm(v.readyMs));
       if (r.ready.dataset.tone !== chanceTone) r.ready.dataset.tone = chanceTone;
       r.done.disabled = !v.current;
-      const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}` : ''}.`;
+      const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}${pc > 0 ? `, running ${pc}% slow today` : pc < 0 ? `, ${-pc}% ahead today` : ''}` : ''}.`;
       setText(r.sr, sentence);
       if (tone === 'late') late.push(sentence);
     }
