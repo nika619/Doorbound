@@ -28,8 +28,11 @@ export const RHO_PRIOR = 0.3;
 const PRIOR_PAIRS = 20;
 /** Above this the model would trust one reading for the whole morning. */
 export const RHO_MAX = 0.8;
-/** Past this many pairs, older ones count half: habits change. */
-const PAIRS_KEPT = 400;
+/**
+ * Past this many pairs, older ones count half: habits change. Pairs from one morning share its pace, so the
+ * evidence grows with mornings, not pairs: 5,000 is about two months of a three-person household.
+ */
+const PAIRS_KEPT = 5000;
 /** A reading this many sigma out is likelier a late tap on "done" than a real step: clamped. */
 const CLAMP = 3;
 
