@@ -26,7 +26,10 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 - **A board for the kitchen screen.** One row per person in split-flap letters: what they are doing, what is next, a status (ON TIME, TIGHT, DELAYED), their chance of being ready by the gate drawn as a live curve (the filled part is before the gate), and the time they will be ready by. Below, a runway: everyone's remaining steps laid out to the gate, with a soft tail showing how late it could realistically run.
 - **It learns.** Every "I'm done" is a real duration. After a few mornings the plan uses what actually happens, not what was said ("Isha's shower takes *12 minutes*, not 8").
 - **It re-plans within the household's rules.** When someone falls behind, it finds the gentlest set of changes the household allows: a quicker version (breakfast to go), someone else takes a step (Dad packs the bag), a step waits until after leaving (the dishwasher), or is skipped. Alexa says what changed; one word undoes it.
-- **Anyone, from anywhere.** "I'm done." "She's still in the shower." "We need to leave ten minutes early." "How are we doing?" "What have you learned?" Each is one tool call.
+- **It notices a slow morning.** One person's steps share today's pace, so a long shower stretches the rest of their plan ("SLOW TODAY +20%"); if a household's mornings run slow together, it learns that too and lets one person's pace inform everyone's.
+- **The evening before.** "We leave at 7:40 tomorrow, when should everyone be up?" It works back to each person's latest start for an 85% chance together, with the most sleep in total, and offers to set alarms.
+- **It keeps score of itself.** Every chance it gives is checked against what happened; "How accurate have you been?" answers from your own mornings. [PILOT.md](PILOT.md) runs five real mornings and prints the report.
+- **Anyone, from anywhere.** "I'm done." "She's still in the shower." "We need to leave ten minutes early." "How are we doing?" "Dad can pack Isha's bag." Set up and run entirely by voice; each sentence is one tool call.
 - **On the Echo Show and beyond.** A small card inside the conversation, the full board on a tap, and the same board on a TV at `/board` (read-only). `/board#replay` plays the demo morning in the browser with no server state at all.
 
 ![Before the news: the board has already noticed Isha's shower running long and marks her TIGHT](docs/board-tight.jpg)
@@ -47,7 +50,7 @@ Everything the board and Alexa say comes from one model, in `src/core/stats.ts`,
 
 3. **A person's whole remaining morning** is a sum of such steps. The sum is matched by one log-normal with the same mean *M* and variance *V* (Fenton–Wilkinson): σ² = ln(1 + V/M²), μ = ln M − σ²/2. That gives, in closed form, their **chance of being ready by the gate**, Φ((ln g − μ)/σ), and their **ready-by time at 85% confidence**, e^(μ + 1.036σ). The household's chance is the product (different people taken as independent).
 
-4. **A slow morning is slow all the way through.** One person's steps share today's pace: ln Xⱼ = μⱼ + σⱼ(√ρ·Z + √(1−ρ)·Eⱼ), with Z the pace and ρ how strongly a household's steps move together. Every finished step is a reading of Z, and Z's posterior stays normal (conjugate); a step still running is censored evidence ("longer than 12 minutes so far"), folded in with the exact mean and variance of the skew-normal it gives. The steps still to come shift by σⱼ√ρ·E[Z] and share the uncertainty ρ·Var[Z] that is left, which widens their sum: Cov(Xᵢ, Xⱼ) = E[Xᵢ]E[Xⱼ](e^(ρ·Var[Z]·σᵢσⱼ) − 1). That double sum is kept as running power sums, Σₖ cᵏ/k!·(Aₖ² − Bₖ), so the re-planner can still try a change in O(1). ρ is learned from pairs of steps finished in the same morning (their standardised readings have E[rᵢrⱼ] = ρ), starting from 0.3. Ignore all this and a planner says 85% and delivers less; the board shows the pace as SLOW TODAY +20%.
+4. **A slow morning is slow all the way through.** One person's steps share today's pace: ln Xⱼ = μⱼ + σⱼ(√ρ·Z + √(1−ρ)·Eⱼ), with Z the pace and ρ how strongly a household's steps move together. Every finished step is a reading of Z, and Z's posterior stays normal (conjugate); a step still running is censored evidence ("longer than 12 minutes so far"), folded in with the exact mean and variance of the skew-normal it gives. The steps still to come shift by σⱼ√ρ·E[Z] and share the uncertainty ρ·Var[Z] that is left, which widens their sum: Cov(Xᵢ, Xⱼ) = E[Xᵢ]E[Xⱼ](e^(ρ·Var[Z]·σᵢσⱼ) − 1). That double sum is kept as running power sums, Σₖ cᵏ/k!·(Aₖ² − Bₖ), so the re-planner can still try a change in O(1). ρ is learned from pairs of steps finished in the same morning (their standardised readings have E[rᵢrⱼ] = ρ), starting from 0.3. Ignore all this and a planner says 85% and delivers less; the board shows the pace as SLOW TODAY +20%. Households can share a pace as well: Z_p = √κ·W + √(1−κ)·U_p, with κ learned from pairs of different people's readings (E[r_p r_q] = ρκ) starting from 0, and all the paces solved together (exact for finished steps, one moment match per running step). The household's chance stays the product of each person's, a lower bound when mornings are linked (Harris–FKG).
 
 5. **The re-plan is exact.** It finds the cheapest set of changes (quicker version 1, handoff 2, waits until after 3, skipped 4; at most one per step, never the step in progress) after which everyone is ready by the gate with at least 85% confidence; among equally cheap plans, the one most likely to get the whole household out. It is an iterative-deepening search over the changes, where each change updates the running sums of at most two people in O(1), with two pruning rules that never cut off a better plan. When nothing gets everyone there, a binary search finds the least lateness any plan can reach, then the cheapest plan that reaches it (so Dad's dishwasher can wait, freeing him to take Isha's bag). A search budget bounds the work, with a greedy plan past it.
 
@@ -60,7 +63,8 @@ The story page draws each of these from the real code as you scroll: the curve l
 **How we know it is right** (all in `npm test`):
 
 - **Calibrated:** on 40,000 simulated mornings with a shared daily pace, looked at a random moment (usually mid-step), when it says 80–90% it happens **84.9%** of the time. Its calibration error is **0.39%**, as low as the log-normal sum allows (0.37% when steps really are independent); the same model with steps taken as independent is off by 2.44%.
-- The pace posterior and the censored update match numerical integration to 1e-5; the running sums match the exact covariance to 1e-4.
+- The pace posterior and the censored update match numerical integration to 1e-5; the running sums match the exact covariance to 1e-4. The household pace matches 2-D integration, equals the per-person pace exactly when κ = 0, and on 12,000 three-person mornings with shared slow days lowers the Brier score (0.1278 against 0.1309).
+- Kept score over 2,000 simulated mornings, its live forecasts land within 2.5 points of what happened in every band. Plan-tomorrow gives the most sleep of any plan with the same chance (brute force).
 - The chance of making the gate matches **100,000 simulated mornings** to within 2 percentage points, mid-morning with a step half done.
 - The truncated remainder's mean and spread match simulation to within 2% and 4%; the sum matches 200,000 simulated mornings to within 2 points.
 - The re-plan equals the **brute-force optimum on 1,000 random mornings**, and holds its guarantees on 2,000 more: nobody on time is made late, only allowed changes are made, a step in progress is never touched, nothing is lost, the same input gives the same plan.
@@ -136,19 +140,25 @@ The MCP endpoint is `/mcp`; the board is the resource `ui://doorbound/board.html
 npm test
 ```
 
-56 tests: the statistics against simulation, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
+73 tests: the statistics against simulation, today's pace and the household's, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
 
 ```bash
 npm run smoke
 ```
 
-Against a running server (18 checks): both protocol versions, every tool's schema, the MCP App resource, a morning with a re-route and undo, the HTTP edges (foreign Origin 403, 64 kB cap, hash-only CSP on the board and the story page). It passes against `node dist/server.mjs` started from outside the project, which is what the container runs.
+Against a running server (18 checks, 20 with OAuth on): both protocol versions, every tool's schema, the MCP App resource, a morning with a re-route and undo, the HTTP edges (foreign Origin 403, 64 kB cap, hash-only CSP on the board and the story page). It passes against `node dist/server.mjs` started from outside the project, which is what the container runs.
+
+```bash
+npm run conformance
+```
+
+The official MCP conformance suite (`@modelcontextprotocol/conformance` 0.1.16) against a running server, paced under its rate limit: initialize, ping, tools/list, resources/list, both DNS-rebinding checks and the SSE scenarios pass. The others need the suite's own fixture server or features Doorbound does not offer (prompts, logging, completion), which it correctly answers with "method not found".
 
 ```bash
 npm run typecheck
 ```
 
-On GitHub, CI runs all of this on every push (Node 22 and 24), then builds the Docker image, checks it refuses to start without a token, and runs the smoke test against the container running read-only with every capability dropped. Dependabot checks the dependencies weekly.
+On GitHub, CI runs all of this on every push (Node 22 and 24), runs the conformance suite, then builds the Docker image, checks it refuses to start without a token, and runs the smoke test, OAuth sign-in included, against the container running read-only with every capability dropped. Dependabot checks the dependencies weekly.
 
 ## How it is built
 
@@ -181,12 +191,12 @@ The server refuses to start beyond loopback without a token and a host allow-lis
 
 ## Limits, honestly
 
-- One person's steps share a pace; different people's mornings are treated as independent. A delay shared by everyone (the whole house overslept) is not modelled.
+- A household's shared pace (κ) starts at 0 and is used only once its own mornings show it. A whole house that oversleeps simply starts later, which the board sees at once.
 - ρ starts at 0.3 by assumption and is learned from the household's own mornings; the step in progress is tied to the pace to first order (the delta method), exact at its start.
 - Fenton–Wilkinson is an approximation; the tests bound its error, they do not make it exact.
 - It learns from the last nine mornings per person and step; one strange morning moves it, a few correct it.
 - The simulator's router is a small rule set standing in for Alexa+'s language model, which in Alexa+ reads the tool descriptions itself.
-- Tested in browsers and the simulator, not on an Echo Show (we have no Amazon devices).
+- Tested in browsers and the simulator, not on an Echo Show (we have no Amazon devices), and not yet deployed to Alexa+ itself: Amazon's add-on tools were partner-only when we checked ([ALEXA.md](ALEXA.md) has every step ready).
 - The board is designed for households of up to eight.
 - The Docker image and compose file have not been built here (no Docker on the development machine); the bundle they run is tested directly. Memory was measured on Windows.
 
