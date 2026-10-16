@@ -20,6 +20,7 @@
     "start": "npm run build && node dist/server.mjs",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "smoke": "tsx scripts/smoke.ts",
+    "pilot": "tsx scripts/pilot.ts",
     "typecheck": "tsc --noEmit",
     "demo": "npm run build && tsx --env-file=demo.env src/server/main.ts",
     "video": "node scripts/record-demo.mjs",
