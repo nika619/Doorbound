@@ -48,7 +48,9 @@ if (OAUTH) {
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) fail('PORT must be 1 to 65535.');
 if (AUTH_TOKEN !== undefined && AUTH_TOKEN.length < 32) fail('AUTH_TOKEN must be at least 32 characters.');
 if (SCREEN_KEY !== undefined && SCREEN_KEY.length < 16) fail('SCREEN_KEY must be at least 16 characters.');
-if (!LOCAL && !AUTH_TOKEN && !OAUTH) fail(`HOST=${HOST} reaches beyond this machine; set AUTH_TOKEN (or the OAUTH_ settings) first.`);
+// Listening on loopback behind a tunnel is public all the same: an outside name in ALLOWED_HOSTS says so.
+const PUBLIC = !LOCAL || ALLOWED_HOSTS.some((h) => !isLoopback(h));
+if (PUBLIC && !AUTH_TOKEN && !OAUTH) fail(`${LOCAL ? `ALLOWED_HOSTS=${ALLOWED_HOSTS.join(',')}` : `HOST=${HOST}`} reaches beyond this machine; set AUTH_TOKEN (or the OAUTH_ settings) first.`);
 if (!LOCAL && !ALLOWED_HOSTS.length) fail('set ALLOWED_HOSTS to the host names clients will use.');
 if (!(DEMO_SPEED >= 1 && DEMO_SPEED <= 60)) fail('DEMO_SPEED must be between 1 and 60.');
 
@@ -90,7 +92,7 @@ const load = (name: string): Page | null => (manifest[name] ? { html: readFileSy
 const pages = { board: load('board') ?? fail('the board page is missing from the build.'), sim: load('sim'), site: load('site') };
 
 // ---------- guards ----------
-const validateHost = LOCAL ? localhostHostValidation() : hostHeaderValidation(ALLOWED_HOSTS);
+const validateHost = !ALLOWED_HOSTS.length ? localhostHostValidation() : hostHeaderValidation(LOCAL ? [...ALLOWED_HOSTS, 'localhost', '127.0.0.1', '[::1]'] : ALLOWED_HOSTS);
 const validateOrigin = LOCAL ? localhostOriginValidation() : originValidation(ALLOWED_ORIGINS);
 const limits = { mcp: new RateLimiter(20, 40), board: new RateLimiter(5, 10), page: new RateLimiter(5, 20), token: new RateLimiter(1, 5) };
 const mcp = toNodeHandler(createMcpHandler(() => buildServer(ctx)));
@@ -128,7 +130,7 @@ function boardRoute(req: IncomingMessage, res: ServerResponse, url: URL, client:
   // A screen beyond this machine must present the screen key (or the full token).
   const key = req.headers['x-screen-key'];
   const presented = typeof key === 'string' ? key : bearer(req);
-  if (!LOCAL || SCREEN_KEY) {
+  if (PUBLIC || SCREEN_KEY) {
     const ok = (SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN));
     if (!ok) return send(res, 401, 'Unauthorized.');
   }
@@ -181,7 +183,7 @@ const server = createServer(async (req, res) => {
         return pages.site ? pageRoute(req, res, pages.site, client) : send(res, 404, 'Not found.');
       case '/sim':
         // The simulator is a development tool: never served beyond this machine.
-        return LOCAL && pages.sim ? pageRoute(req, res, pages.sim, client, true) : send(res, 404, 'Not found.');
+        return !PUBLIC && pages.sim ? pageRoute(req, res, pages.sim, client, true) : send(res, 404, 'Not found.');
       case '/healthz':
         return send(res, 200, 'ok');
       case '/.well-known/oauth-authorization-server':
@@ -206,7 +208,7 @@ server.keepAliveTimeout = 5_000;
 server.maxHeadersCount = 64;
 server.listen(PORT, HOST, () => {
   const base = `http://${HOST.includes(':') ? `[${HOST}]` : HOST}:${PORT}`;
-  console.log(`Doorbound: MCP ${base}/mcp · story ${base}/ · board ${base}/board${LOCAL ? ` · simulator ${base}/sim` : ''}${DEMO_SPEED > 1 ? ` · demo clock ×${DEMO_SPEED}` : ''}`);
+  console.log(`Doorbound: MCP ${base}/mcp · story ${base}/ · board ${base}/board${!PUBLIC ? ` · simulator ${base}/sim` : ''}${DEMO_SPEED > 1 ? ` · demo clock ×${DEMO_SPEED}` : ''}`);
 });
 
 async function shutdown() {
