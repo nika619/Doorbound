@@ -1,7 +1,7 @@
 {
-  "name": "departures",
+  "name": "doorbound",
   "version": "1.0.0",
-  "description": "Departures: a live departure board for the household morning, as an Alexa+ add-on. Self-hosted MCP server (spec 2025-11-25 and 2026-07-28, Streamable HTTP) with an MCP App board.",
+  "description": "Doorbound: a live departure board for the household morning, as an Alexa+ add-on. Self-hosted MCP server (spec 2025-11-25 and 2026-07-28, Streamable HTTP) with an MCP App board.",
   "private": true,
   "type": "module",
   "license": "MIT",
