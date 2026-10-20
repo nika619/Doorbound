@@ -22,6 +22,7 @@ export const stepSchema = z.object({
   canWait: z.boolean().optional(),
   optional: z.boolean().optional(),
   helpers: z.array(id).max(LIMITS.helpers).optional(),
+  uses: z.string().trim().min(1).max(32).optional(),
 });
 export const householdSchema = z.object({
   people: z.array(z.object({ id, name, steps: z.array(stepSchema).max(LIMITS.steps), wakeSec: z.number().int().min(60).max(3600).optional() })).max(LIMITS.people),
@@ -42,12 +43,14 @@ export const taskSchema = z.object({
   doneAtMs: ms.optional(),
   quick: z.boolean().optional(),
   untimed: z.boolean().optional(),
+  uses: z.string().max(32).optional(),
+  inAtMs: ms.optional(),
   notBeforeMs: ms.optional(),
   extend: z.object({ fromMs: ms, mu, sigma }).optional(),
 });
 export const laneSchema = z.object({ personId: id, startedAtMs: ms, tasks: z.array(taskSchema).max(LIMITS.people * LIMITS.steps) });
 export const changeSchema = z.object({ kind: z.enum(['quick', 'handoff', 'later', 'skip']), taskKey: z.string().max(80), name, from: id, to: id.optional(), savedSec: z.number().int() });
-const departureCore = z.object({ name, gateMs: ms, startedAtMs: ms, rev: z.number().int().nonnegative(), lanes: z.array(laneSchema).max(LIMITS.people), rho: z.number().min(0).max(RHO_MAX).default(RHO_PRIOR), kappa: z.number().min(0).max(KAPPA_MAX).default(0), forecasts: z.array(z.object({ personId: id, p: z.number().min(0).max(1), atMs: ms })).max(256).optional() });
+const departureCore = z.object({ name, gateMs: ms, startedAtMs: ms, rev: z.number().int().nonnegative(), lanes: z.array(laneSchema).max(LIMITS.people), rho: z.number().min(0).max(RHO_MAX).default(RHO_PRIOR), kappa: z.number().min(0).max(KAPPA_MAX).default(0), paceMean: z.number().min(-1.5).max(1.5).optional(), forecasts: z.array(z.object({ personId: id, p: z.number().min(0).max(1), atMs: ms })).max(256).optional() });
 export const departureSchema = departureCore.extend({
   reroute: z
     .object({ atMs: ms, rev: z.number().int(), changes: z.array(changeSchema).max(LIMITS.people * LIMITS.steps), stillLateSec: z.number().int().nonnegative(), before: departureCore.extend({ reroute: z.null() }) })
@@ -60,7 +63,7 @@ const fileSchema = z.object({
   history: z.array(z.tuple([z.string().max(80), z.array(z.number().positive().max(86_400)).max(WINDOW)])).max(LIMITS.historyKeys),
   departure: departureSchema.nullable(),
   /** Added after version 2 shipped, so optional: an older file starts from the prior. */
-  pace: z.object({ products: z.number().finite(), pairs: z.number().nonnegative().finite(), crossProducts: z.number().finite().optional(), crossPairs: z.number().nonnegative().finite().optional() }).optional(),
+  pace: z.object({ products: z.number().finite(), pairs: z.number().nonnegative().finite(), crossProducts: z.number().finite().optional(), crossPairs: z.number().nonnegative().finite().optional(), weekday: z.array(z.tuple([z.number().finite(), z.number().nonnegative().finite()])).length(7).optional() }).optional(),
   scores: z.array(z.tuple([z.number().min(0).max(1), z.union([z.literal(0), z.literal(1)])])).max(SCORES_KEPT).optional(),
 });
 
