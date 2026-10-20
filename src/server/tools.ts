@@ -359,7 +359,9 @@ export function buildServer(ctx: Ctx): McpServer {
       const rho = rhoOf(ctx.store.pace);
       const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho));
       const rerouted = commit(ctx, 'start_departure', dep, undefined, hh.people.map((p) => p.id));
-      return say(ctx, `${dep.name} started. ${summary(ctx, ctx.store.departure!, rerouted)}`);
+      // An add-on cannot speak first, but Alexa's own reminders can: offer one, five minutes before the door.
+      const remind = gateMs - now > 10 * 60_000 ? ` Shall I set a reminder for ${clock(gateMs - 5 * 60_000)}, five minutes before you leave?` : '';
+      return say(ctx, `${dep.name} started. ${summary(ctx, ctx.store.departure!, rerouted)}${remind}`);
     },
   );
 
