@@ -393,7 +393,8 @@ export function buildServer(ctx: Ctx): McpServer {
       const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
       const pct = Math.round(Math.abs(next.pace) * 100);
       const pace = !next.current || pct < 15 ? '' : next.pace > 0 ? ` ${p.name} is running about ${pct}% slow this morning, so I've planned the rest longer.` : ` ${p.name} is about ${pct}% quicker than usual this morning.`;
-      const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}.${pace}` : `${p.name} is ready to go.`;
+      const forIt = next.current ? Math.max(60, Math.round((next.stepEndMs - ctx.now()) / 60_000) * 60) : 0;
+      const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}, about ${minutes(forIt)}.${pace}` : `${p.name} is ready to go.`;
       const note = r.sample?.capped === 'long' ? ' That took far longer than usual, so I have counted it as a slow morning, not a new normal.' : '';
       return say(ctx, rerouted ? `${finished} done.${note} ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done.${note} ${lead}`);
     },

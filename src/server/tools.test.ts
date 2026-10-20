@@ -27,7 +27,7 @@ test("with no name said, it works out who from the step, or asks", async () => {
   };
   await say(0, 'start_departure', { leaveAt: '07:49' });
   assert.deepEqual(await say(5, 'step_done'), { text: 'Who was that? Aarav is on breakfast, Isha on shower and Dad on pack lunches.', error: false });
-  assert.match((await say(9, 'step_done', { step: 'Shower' })).text, /^Shower done\. Isha is on to get dressed\./);
+  assert.match((await say(9, 'step_done', { step: 'Shower' })).text, /^Shower done\. Isha is on to get dressed, about \d+ minutes\./);
   assert.equal((await say(9.5, 'step_done', { step: 'piano' })).text, 'Nobody is on piano right now. Who was that? Aarav is on breakfast, Isha on get dressed and Dad on pack lunches.');
   assert.match((await say(10, 'still_going', { step: 'lunches' })).text, /Dad|Re-routed/);
   for (const [m, who] of [[11, 'Aarav'], [12, 'Aarav'], [13, 'Aarav'], [14, 'Dad'], [15, 'Dad'], [16, 'Dad']] as const) await say(m, 'step_done', { person: who });
