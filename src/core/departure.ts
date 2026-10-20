@@ -9,7 +9,7 @@
 
 import { keyOf, type History } from './learn.ts';
 import { addPart, adjust, censor, householdPace, paceFactor, paceOf, PARTS, readings, RHO_PRIOR, total, type Pace } from './pace.ts';
-import { cdf, moments, posterior, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
+import { cdf, moments, posterior, PRIOR_SIGMA, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
 
 export interface StepDef {
   id: string;
@@ -47,6 +47,8 @@ export interface Task extends LogNormal {
   state: TaskState;
   doneAtMs?: number;
   quick?: boolean;
+  /** Finished together with the rest ("I'm ready"): its own length is unknown, so nothing is learned from it. */
+  untimed?: boolean;
   /** A handed-over task cannot have started before it was handed over. */
   notBeforeMs?: number;
   /** Someone said it is running over: from `fromMs`, this much more (log-normal) replaces the model. */
@@ -291,6 +293,25 @@ export interface Sample {
   personId: string;
   stepId: string;
   seconds: number;
+  /** The measured time was too far off to be the step itself (a forgotten or doubled "done"), so it was capped. */
+  capped?: 'long' | 'short';
+}
+
+/** Learning takes a step's time only within this many sigmas (log scale) of its model; beyond, it is capped there. */
+const CAP_SIGMA = 2.5;
+
+/**
+ * A forgotten "done" turns a ten-minute shower into three hours, and one such sample would skew the step for
+ * nine mornings. So the time learned is capped at CAP_SIGMA sigmas of the step's model (sigma at least the
+ * prior's, so a young model can still move), unless someone said it was running over: then a long time is real.
+ */
+function capped(d: LogNormal, seconds: number, confirmedLong: boolean): Pick<Sample, 'seconds' | 'capped'> {
+  const s = Math.max(d.sigma, PRIOR_SIGMA) * CAP_SIGMA;
+  const hi = Math.exp(d.mu + s);
+  const lo = Math.exp(d.mu - s);
+  if (seconds > hi && !confirmedLong) return { seconds: Math.round(hi), capped: 'long' };
+  if (seconds < lo) return { seconds: Math.max(1, Math.round(lo)), capped: 'short' };
+  return { seconds };
 }
 
 /**
@@ -309,8 +330,17 @@ export function markDone(dep: Departure, personId: string, nowMs: number): { dep
   const fair = task.forPerson === personId && !task.quick;
   return {
     dep: bump(dep, dep.lanes.with(li, { ...lane, tasks })),
-    sample: fair ? { personId, stepId: task.stepId, seconds: Math.round((nowMs - startMs) / 1000) } : null,
+    sample: fair ? { personId, stepId: task.stepId, ...capped(task, Math.round((nowMs - startMs) / 1000), !!task.extend) } : null,
   };
+}
+
+/** "I'm ready": everything the person had left is done now. Untimed, so nothing is learned from it. */
+export function markReady(dep: Departure, personId: string, nowMs: number): Departure | null {
+  const li = laneOf(dep, personId);
+  if (li < 0 || currentIndex(dep.lanes[li]) < 0) return null;
+  const lane = dep.lanes[li];
+  const tasks = lane.tasks.map((t) => (t.state === 'todo' ? { ...t, state: 'done' as const, doneAtMs: nowMs, untimed: true } : t));
+  return bump(dep, dep.lanes.with(li, { ...lane, tasks }));
 }
 
 /** The current step is running over: about `extraSec` more from now. */

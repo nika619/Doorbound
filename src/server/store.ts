@@ -41,6 +41,7 @@ export const taskSchema = z.object({
   state: z.enum(['todo', 'done', 'later', 'skipped']),
   doneAtMs: ms.optional(),
   quick: z.boolean().optional(),
+  untimed: z.boolean().optional(),
   notBeforeMs: ms.optional(),
   extend: z.object({ fromMs: ms, mu, sigma }).optional(),
 });

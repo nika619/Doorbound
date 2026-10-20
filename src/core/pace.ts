@@ -58,7 +58,7 @@ export function readings(lane: Lane): number[] {
     if (t.state !== 'done') continue;
     const sec = (t.doneAtMs! - Math.max(cursor, t.notBeforeMs ?? cursor)) / 1000;
     cursor = t.doneAtMs!;
-    if (t.forPerson === lane.personId && !t.quick && sec >= 1) out.push(reading(t, sec));
+    if (t.forPerson === lane.personId && !t.quick && !t.untimed && sec >= 1) out.push(reading(t, sec));
   }
   return out;
 }

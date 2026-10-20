@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { currentIndex, everyoneOnTime, GRACE_MS, laneTimeline, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute } from './departure.ts';
+import { currentIndex, everyoneOnTime, GRACE_MS, laneTimeline, markDone, markReady, project, setGate, startDeparture, stillGoing, TARGET, undoReroute } from './departure.ts';
+import { readings } from './pace.ts';
 import { draw, household, learnedHistory, rng } from './fixtures.ts';
 import { reroute } from './reroute.ts';
 import { moments, posterior, quantile } from './stats.ts';
@@ -47,6 +48,30 @@ test('the chance of making the gate is right, mid-morning and mid-step (Monte Ca
     }
     assert.ok(Math.abs(views[li].pOnTime - hit / n) < 0.02, `${lane.personId}: analytic ${views[li].pOnTime.toFixed(3)} vs simulated ${(hit / n).toFixed(3)}`);
   }
+});
+
+test('a forgotten or doubled "done" is capped before it is learned, unless the step was said to run over', () => {
+  let dep = startDeparture(household, new Map(), 'School run', at(60), at(0));
+  const forgot = markDone(dep, 'isha', at(180))!; // an 8-minute shower "done" three hours late
+  assert.equal(forgot.sample!.capped, 'long');
+  assert.ok(forgot.sample!.seconds < 25 * 60 && forgot.sample!.seconds > 15 * 60, `learned ${forgot.sample!.seconds} s, not 3 hours`);
+  assert.equal(forgot.dep.lanes[1].tasks[0].doneAtMs, at(180), 'the board keeps when it really finished');
+  const doubled = markDone(markDone(dep, 'aarav', at(8))!.dep, 'aarav', at(8) + 2000)!; // "done" twice: teeth in 2 s
+  assert.equal(doubled.sample!.capped, 'short');
+  dep = stillGoing(dep, 'isha', 30 * 60, at(20))!;
+  const long = markDone(dep, 'isha', at(45))!;
+  assert.equal(long.sample!.capped, undefined, 'someone said it was running over: a long shower is real');
+  assert.equal(long.sample!.seconds, 45 * 60);
+});
+
+test('"ready" finishes everything left at once, and nothing is learned from those steps', () => {
+  const dep = markReady(markDone(startDeparture(household, new Map(), 'School run', at(40), at(0)), 'isha', at(10))!.dep, 'isha', at(24))!;
+  const isha = dep.lanes[1];
+  assert.equal(currentIndex(isha), -1);
+  assert.deepEqual(isha.tasks.map((t) => [t.state, !!t.untimed]), [['done', false], ['done', true], ['done', true], ['done', true]]);
+  assert.equal(project(dep, at(24))[1].readyMs, at(24));
+  assert.equal(readings(isha).length, 1, 'only the timed shower is a reading of her pace');
+  assert.equal(markReady(dep, 'isha', at(25)), null, 'nothing left: nothing to do');
 });
 
 test('marking a step done moves the lane on and returns a fair sample to learn from', () => {
