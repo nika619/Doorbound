@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Doorbound for every household: one small Graviton instance running the locked-down container behind
+  Caddy (automatic HTTPS), secrets in Secrets Manager, no SSH (Systems Manager instead), encrypted disk
+  with daily snapshots. After the stack is up, point DomainName's A record at the PublicIp output.
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: The host name Alexa+ will call, for example doorbound.example.com
+    AllowedPattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+  AuthToken:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    AllowedPattern: '^[A-Za-z0-9_-]+$'
+    ConstraintDescription: letters, digits, - and _ only (openssl rand -hex 32 makes one)
+    Description: A fixed bearer token for the operator's own tools (32+ random characters)
+  OAuthClientId:
+    Type: String
+    Default: alexa-plus
+    Description: The client id Alexa+ is registered with
+  OAuthClientSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    AllowedPattern: '^[A-Za-z0-9_-]+$'
+    ConstraintDescription: letters, digits, - and _ only (openssl rand -hex 32 makes one)
+    Description: The client secret Alexa+ is registered with (32+ random characters)
+  RedirectUris:
+    Type: String
+    Default: ''
+    Description: Alexa+'s account-linking redirect URLs, comma-separated. Empty for a single-household server.
+  GitRef:
+    Type: String
+    Default: main
+    Description: Branch or tag of github.com/nika619/Doorbound to run
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues: [t4g.micro, t4g.small, t4g.medium]
+  LatestAmi:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Resources:
+  Secrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Doorbound's tokens; read by the instance at boot, never written into its user data
+      SecretString:
+        Fn::Sub: '{"AUTH_TOKEN":"${AuthToken}","OAUTH_CLIENT_SECRET":"${OAuthClientSecret}"}'
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: read-doorbound-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: { Ref: Secrets }
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [{ Ref: InstanceRole }]
+
+  WebOnly:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTP (for the certificate challenge and the redirect) and HTTPS only; no SSH
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIpv6: '::/0' }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIpv6: '::/0' }
+
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: { Ref: LatestAmi }
+      InstanceType: { Ref: InstanceType }
+      IamInstanceProfile: { Ref: InstanceProfile }
+      SecurityGroupIds: [{ 'Fn::GetAtt': [WebOnly, GroupId] }]
+      MetadataOptions: { HttpTokens: required, HttpEndpoint: enabled }
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: { VolumeSize: 20, VolumeType: gp3, Encrypted: true, DeleteOnTermination: false }
+      Tags:
+        - { Key: Name, Value: doorbound }
+        - { Key: Backup, Value: doorbound }
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -euo pipefail
+            dnf install -y docker git
+            systemctl enable --now docker
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fsSL https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-aarch64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            git clone --depth 1 --branch ${GitRef} https://github.com/nika619/Doorbound.git /opt/doorbound
+            cd /opt/doorbound
+            SECRET=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${Secrets} --query SecretString --output text)
+            field() { echo "$SECRET" | python3 -c "import json,sys; print(json.load(sys.stdin)['$1'])"; }
+            umask 077
+            printf 'DOMAIN=%s\nAUTH_TOKEN=%s\nOAUTH_CLIENT_ID=%s\nOAUTH_CLIENT_SECRET=%s\nOAUTH_REDIRECT_URIS=%s\n' \
+              '${DomainName}' "$(field AUTH_TOKEN)" '${OAuthClientId}' "$(field OAUTH_CLIENT_SECRET)" '${RedirectUris}' > .env
+            docker compose up -d --build
+
+  Address:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: { Ref: Server }
+
+  SnapshotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: dlm.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole
+
+  DailySnapshots:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: Doorbound households, one snapshot a day, a week kept
+      State: ENABLED
+      ExecutionRoleArn: { 'Fn::GetAtt': [SnapshotRole, Arn] }
+      PolicyDetails:
+        ResourceTypes: [VOLUME]
+        TargetTags: [{ Key: Backup, Value: doorbound }]
+        Schedules:
+          - Name: daily
+            CreateRule: { Interval: 24, IntervalUnit: HOURS, Times: ['03:00'] }
+            RetainRule: { Count: 7 }
+            CopyTags: true
+
+Outputs:
+  PublicIp:
+    Description: Point DomainName's A record here; Caddy then fetches the certificate by itself
+    Value: { Ref: Address }
+  McpUrl:
+    Description: The MCP endpoint to register with Alexa+
+    Value: { 'Fn::Sub': 'https://${DomainName}/mcp' }
+  LinkingUrls:
+    Description: For account linking (ALEXA.md)
+    Value: { 'Fn::Sub': 'authorize https://${DomainName}/oauth/authorize, token https://${DomainName}/oauth/token' }
