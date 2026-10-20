@@ -15,7 +15,7 @@ assert.equal(client.getNegotiatedProtocolVersion(), '2025-11-25');
 step('initialize negotiates protocol 2025-11-25 over Streamable HTTP');
 
 const { tools } = await client.listTools();
-assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'end_departure', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'set_routine', 'start_departure', 'step_done', 'still_going', 'undo_reroute']);
+assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'end_departure', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'set_routine', 'start_departure', 'step_done', 'still_going', 'tv_link', 'undo_reroute']);
 for (const t of tools) assert.ok(t.description && t.outputSchema, `${t.name} has a description and an output schema`);
 assert.deepEqual((tools.find((t) => t.name === 'get_board')!._meta as { ui: { visibility: string[] } }).ui.visibility, ['app']);
 step(`tools/list: ${tools.length} tools, one per thing a household says, each with an output schema; get_board is for the screen only`);
@@ -67,8 +67,8 @@ assert.ok(speakable(r.text), r.text);
 step(`undo_reroute: "${r.text}"`);
 
 r = await call('step_done', { person: 'Zed' });
-assert.ok(r.isError && /The household is/.test(r.text), 'an unknown person is an error that names the household');
-step(`unknown person is an error result, never silence: "${r.text}"`);
+assert.ok(!r.isError && /^I don't have anyone called Zed\. Who was that\? /.test(r.text) && speakable(r.text), r.text);
+step(`unknown person is a question naming who is on what, never silence: "${r.text}"`);
 
 r = await call('change_departure', { leaveAt: '25:99' });
 assert.ok(r.isError, 'a malformed time is refused by the schema');
@@ -116,7 +116,7 @@ step('unknown paths are 404; /healthz answers');
 // ---------- Alexa+ sign-in (OAuth client credentials), when the server is set up for it ----------
 if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
   const meta = (await (await fetch(new URL('/.well-known/oauth-authorization-server', base))).json()) as { token_endpoint: string; grant_types_supported: string[] };
-  assert.deepEqual(meta.grant_types_supported, ['client_credentials']);
+  assert.deepEqual(meta.grant_types_supported, process.env.OAUTH_REDIRECT_URIS ? ['client_credentials', 'authorization_code', 'refresh_token'] : ['client_credentials']);
   const pr = (await (await fetch(new URL('/.well-known/oauth-protected-resource', base))).json()) as { resource: string };
   const basic = (secret: string) => `Basic ${Buffer.from(`${encodeURIComponent(process.env.OAUTH_CLIENT_ID!)}:${encodeURIComponent(secret)}`).toString('base64')}`;
   const token = (secret: string) =>
@@ -142,6 +142,62 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
   assert.equal(forged.status, 401);
   assert.match(forged.headers.get('www-authenticate') ?? '', /resource_metadata=/);
   step('OAuth: a wrong secret is invalid_client; a tampered token is a 401 that points at the metadata');
+
+  // ---------- account linking: one server, many households ----------
+  const redirect = process.env.OAUTH_REDIRECT_URIS?.split(',')[0];
+  if (redirect) {
+    const { createHash, randomBytes } = await import('node:crypto');
+    const tokenUrl = new URL(new URL(meta.token_endpoint).pathname, base);
+    const form = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const fields = (html: string) => Object.fromEntries([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1], m[2].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))]));
+    /** Link one Alexa account: start a new household, or join with a key. Returns its tools client and the key shown, if any. */
+    const link = async (join?: string) => {
+      const verifier = randomBytes(32).toString('base64url');
+      const q = new URLSearchParams({ client_id: process.env.OAUTH_CLIENT_ID!, redirect_uri: redirect, response_type: 'code', code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', state: 'xyz' });
+      const consent = await fetch(new URL(`/oauth/authorize?${q}`, base));
+      assert.equal(consent.status, 200);
+      assert.match(consent.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+      const post = await fetch(new URL('/oauth/authorize', base), { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields(await consent.text()), action: join ? 'join' : 'new', key: join ?? '' }) });
+      let back: URL;
+      let key: string | undefined;
+      if (join) back = new URL(post.headers.get('location')!);
+      else {
+        const html = await post.text();
+        key = /<div class="k">([^<]+)<\/div>/.exec(html)![1];
+        back = new URL(/<a class="b" href="([^"]+)"/.exec(html)![1].replace(/&#38;/g, '&'));
+      }
+      assert.equal(back.origin + back.pathname, redirect);
+      assert.equal(back.searchParams.get('state'), 'xyz');
+      const t = await fetch(tokenUrl, { method: 'POST', headers: { ...form, Authorization: basic(process.env.OAUTH_CLIENT_SECRET!) }, body: new URLSearchParams({ grant_type: 'authorization_code', code: back.searchParams.get('code')!, redirect_uri: redirect, code_verifier: verifier }) });
+      assert.equal(t.status, 200);
+      const { access_token: token, refresh_token } = (await t.json()) as { access_token: string; refresh_token: string };
+      assert.ok(refresh_token);
+      const c = new Client({ name: 'alexa-plus-linked', version: '1.0.0' });
+      await c.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+      await c.listTools();
+      const say = async (name: string, args: Record<string, unknown> = {}) => ((await c.callTool({ name, arguments: args })) as { content: { text: string }[]; structuredContent?: { people: { name: string }[] } });
+      return { key, say, close: () => c.close() };
+    };
+    const a = await link();
+    assert.match(a.key!, /^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}-[0-9A-Z]$/);
+    await a.say('set_routine', { person: 'Noor', steps: [{ name: 'Shower', minutes: 7 }] });
+    const partner = await link(a.key);
+    assert.deepEqual((await partner.say('learned_times')).structuredContent?.people.map((p) => p.name), ['Noor'], 'a second Alexa account with the key sees the same household');
+    const b = await link();
+    assert.deepEqual((await b.say('learned_times')).structuredContent?.people, [], 'another household sees nothing of it');
+    const tv = (await a.say('tv_link')).content[0].text.match(/#k=(\S+)/)![1];
+    const board = (await (await fetch(new URL('/api/board', base), { headers: { 'X-Screen-Key': tv } })).json()) as { people: { name: string }[] };
+    assert.deepEqual(board.people.map((p) => p.name), ['Noor'], "a household's TV link shows that household");
+    for (const x of [a, partner, b]) await x.close();
+    step('account linking: a new household with its key, a second account joining it, another household kept apart, its own TV link');
+    const svc = new Client({ name: 'alexa-plus-service', version: '1.0.0' });
+    await svc.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${access_token}` } } }));
+    assert.ok((await svc.listTools()).tools.length > 0);
+    const refused = (await svc.callTool({ name: 'departure_status', arguments: {} })) as { content: { text: string }[]; isError?: boolean };
+    assert.ok(refused.isError && /Link Doorbound/.test(refused.content[0].text), "Alexa's own token reaches no household's data");
+    await svc.close();
+    step("Alexa's service token lists the tools but runs none on a linking server");
+  }
 }
 
 console.log('\nAll smoke checks passed.');
