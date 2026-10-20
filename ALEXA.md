@@ -13,7 +13,7 @@ From Amazon's MCP toolkit pages (read on Oct 16, 2026):
 | MCP 2025-11-25 over Streamable HTTP | Yes, and the official conformance suite passes (`npm run conformance`) |
 | A public HTTPS URL (a tunnel is fine while developing) | `compose.yaml` with automatic HTTPS, or any tunnel |
 | Round trips under 500 ms | Tool calls take about 4 ms on the server (README, Measured) |
-| OAuth 2.1; service-level sign-in with client credentials for a private server | Built in: `/oauth/token`, discovery at `/.well-known/oauth-authorization-server` |
+| OAuth 2.1: service-level sign-in with client credentials, and per-user account linking (authorization code with PKCE) | Both built in: `/oauth/token` and `/oauth/authorize`, discovery at `/.well-known/oauth-authorization-server`; one server serves many households, each apart |
 | MCP Apps for visuals | The board is the MCP App `ui://doorbound/board.html` |
 
 ## 1. Run the server where Alexa+ can reach it
@@ -57,6 +57,20 @@ alexa-ai new mcp --name "Doorbound" --locale en-US --mcp-server-url "https://abc
 ```
 
 Where the CLI asks for the rest of the sign-in, the token endpoint is `https://<your host>/oauth/token`, the grant is client credentials, the scope `mcp:service`, and the secret is your `OAUTH_CLIENT_SECRET` (sent with HTTP Basic). Amazon's pages do not show these prompts; if it wants a JSON file instead, that is `alexa-ai configure-account-linking`.
+
+### Account linking: one Doorbound for every household
+
+With only the settings above, the server is one household's, and Alexa+'s service token reaches it. To offer Doorbound to everyone, turn on account linking (Alexa+'s per-user tier): set `OAUTH_REDIRECT_URIS` to the redirect URLs Alexa+ gives for your add-on (comma-separated, exact match), and configure linking with:
+
+| Setting | Value |
+|---|---|
+| Authorization URL | `https://<your host>/oauth/authorize` |
+| Token URL | `https://<your host>/oauth/token` |
+| Client id and secret | `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` (HTTP Basic) |
+| Grant | authorization code with PKCE (S256); refresh tokens issued |
+| Scopes | `mcp:tools mcp:resources` |
+
+The person linking sees one page: **start a new household**, or **join one with its household key**. A new household's key is shown once (only its fingerprint is stored), so a partner's Alexa account can join the same household later. Each household's data lives apart, every token names one household, and Alexa+'s own service token can list the tools but never run one. Each household gets its own TV link ("Alexa, put the board on the TV"). The smoke test runs this whole flow in CI.
 
 ## 3. Fill in the listing (`addon-package/addon.json`)
 
