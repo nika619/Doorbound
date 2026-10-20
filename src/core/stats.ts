@@ -72,7 +72,13 @@ export function posterior(statedSec: number, samples: readonly number[] = []): L
   const mu = sum / (k + samples.length);
   let ss = k * (PRIOR_SIGMA ** 2 + (m0 - mu) ** 2);
   for (const x of samples) ss += (Math.log(x) - mu) ** 2;
-  return { mu, sigma: Math.max(MIN_SIGMA, Math.sqrt(ss / (k + samples.length))) };
+  // Predictive, not plug-in: mu is itself uncertain (it rests on k + n mornings), which adds 1 / (k + n) of the
+  // spread again, and the spread is itself estimated (divide by n - 1). Without these a young model is
+  // overconfident: 85% meant about 81% after five mornings (robust.test.ts).
+  const n = k + samples.length;
+  // A stated time alone keeps the prior's spread as it is: PRIOR_SIGMA already is all of a guess's uncertainty.
+  if (!samples.length) return { mu, sigma: Math.max(MIN_SIGMA, Math.sqrt(ss / n)) };
+  return { mu, sigma: Math.max(MIN_SIGMA, Math.sqrt((ss / (n - 1)) * (1 + 1 / n))) };
 }
 
 export const median = (d: LogNormal) => Math.exp(d.mu);
