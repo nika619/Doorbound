@@ -776,10 +776,25 @@ async function act(tool: string, args: Record<string, unknown>) {
   }
 }
 
+// An always-on kitchen screen (the household's TV link in a tablet's or an Echo Show's browser): while a
+// departure is running, keep the display awake where the browser allows it. Inside Alexa+ the host decides.
+let wake: WakeLockSentinel | null = null;
+async function keepAwake(on: boolean) {
+  try {
+    if (on && !wake && !bridge && !replayMode && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+      wake = await navigator.wakeLock.request('screen');
+      wake.addEventListener('release', () => (wake = null));
+    } else if (!on && wake) await wake.release();
+  } catch {
+    // not allowed here (no permission, battery saver): the screen's own settings decide
+  }
+}
+
 function adopt(next: Board, sentPerf: number) {
   syncClock(next.serverNowMs, sentPerf);
   rate = next.clockRate || 1;
   if (next.unchanged) return;
+  void keepAwake(!!next.departure);
   const first = !board;
   board = next;
   if (mode === 'fullscreen') {
@@ -843,7 +858,11 @@ function replay() {
 }
 
 let failures = 0;
+let pending: ReturnType<typeof setTimeout> | undefined;
+let inFlight = false;
 async function poll() {
+  if (inFlight) return; // the request out will schedule the next
+  inFlight = true;
   const sent = performance.now();
   try {
     if (bridge) {
@@ -865,8 +884,17 @@ async function poll() {
     if (failures >= 3) setText($('msgText'), 'Reconnecting…');
   }
   // Back off when the server is away; never more than one request in flight.
-  setTimeout(poll, failures ? Math.min(10_000, 1000 * 2 ** failures) : 1000);
+  inFlight = false;
+  pending = setTimeout(poll, failures ? Math.min(10_000, 1000 * 2 ** failures) : 1000);
 }
+// Back on screen (a tablet woken, a tab brought forward): catch up at once and take the wake lock again.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || replayMode) return;
+  if (pending) clearTimeout(pending);
+  failures = 0;
+  void poll();
+  void keepAwake(!!board?.departure);
+});
 
 // ---------- the frame loop: one transform per frame, the rest once a second ----------
 
