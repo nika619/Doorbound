@@ -5,7 +5,7 @@
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { kappaOf, readings, reading, recordPace, rhoOf } from '../core/pace.ts';
+import { kappaOf, readings, reading, recordPace, rhoOf, weekdayMean } from '../core/pace.ts';
 import { planStarts, WAKE_SEC } from '../core/tomorrow.ts';
 import { honesty, noteForecasts, settle } from '../core/score.ts';
 import { currentIndex, currentRemaining, departurePaces, markDone, markReady, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
@@ -46,6 +46,7 @@ const boardSchema = z.object({
       lanes: z.array(laneSchema),
       rho: z.number(),
       kappa: z.number().optional(),
+      paceMean: z.number().optional(),
       reroute: z.object({ atMs: z.number(), changes: z.array(changeSchema), stillLateSec: z.number(), canUndo: z.boolean() }).nullable(),
     })
     .nullable()
@@ -136,7 +137,7 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
   if (behind.length) {
     const works = Math.ceil(Math.max(...behind.map((v) => v.readyMs)) / 60_000) * 60_000;
     // What is holding each of them up, when a step has run past its target: the thing to act on.
-    const over = (v: LaneView) => (v.current && now - v.stepEndMs > 60_000 ? ` ${who(v)} is ${minutes((now - v.stepEndMs) / 1000)} over on ${v.current.name.toLowerCase()}.` : '');
+    const over = (v: LaneView) => (v.waitingFor ? ` ${who(v)} is waiting for the ${v.waitingFor}.` : v.current && now - v.stepEndMs > 60_000 ? ` ${who(v)} is ${minutes((now - v.stepEndMs) / 1000)} over on ${v.current.name.toLowerCase()}.` : '');
     const each = behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, ${odds(v.pOnTime)}.${over(v)}`);
     return `${each.join(' ')} Leave at ${clock(dep.gateMs)}, or at ${clock(works)} to be sure.`;
   }
@@ -276,6 +277,7 @@ export function buildServer(ctx: Ctx): McpServer {
               canWait: z.boolean().optional().describe('It can be done after leaving'),
               optional: z.boolean().optional().describe('It can be skipped on a rushed morning'),
               helpers: z.array(name).max(LIMITS.helpers).optional().describe('Other people in the household who may do it instead'),
+              uses: name.optional().describe('A space it needs to itself, shared with others, for example "bathroom"'),
             }),
           )
           .min(1)
@@ -303,6 +305,7 @@ export function buildServer(ctx: Ctx): McpServer {
           canWait: s.canWait || undefined,
           optional: s.optional || undefined,
           helpers: s.helpers?.map(slug).filter((h) => h !== id),
+          uses: s.uses?.trim().toLowerCase(),
         };
       });
       const wakeSec = wakeMinutes !== undefined ? Math.round(wakeMinutes * 60) : existing?.wakeSec;
@@ -330,11 +333,12 @@ export function buildServer(ctx: Ctx): McpServer {
         canWait: z.boolean().optional().describe('It can be done after leaving'),
         optional: z.boolean().optional().describe('It can be skipped'),
         helper: name.optional().describe('Someone else who may do it instead'),
+        uses: name.optional().describe('A space it needs to itself, shared with others, for example "bathroom": one person at a time'),
       }),
       ...out,
       _meta: { ui },
     },
-    async ({ person, step, quickVersion, canWait, optional, helper }) => {
+    async ({ person, step, quickVersion, canWait, optional, helper, uses }) => {
       const p = findPerson(ctx, person);
       if (!p) return noOne(ctx, person);
       const key = step.trim().toLowerCase();
@@ -349,12 +353,13 @@ export function buildServer(ctx: Ctx): McpServer {
         ...(canWait !== undefined ? { canWait: canWait || undefined } : {}),
         ...(optional !== undefined ? { optional: optional || undefined } : {}),
         ...(h ? { helpers: [...new Set([...(s.helpers ?? []), h.id])].slice(0, LIMITS.helpers) } : {}),
+        ...(uses ? { uses: uses.trim().toLowerCase() } : {}),
       };
       ctx.store.household = { people: ctx.store.household.people.map((x) => (x.id === p.id ? { ...x, steps: x.steps.map((y) => (y.id === s.id ? next : y)) } : x)) };
       ctx.store.touch();
       void ctx.store.save();
       ctx.audit.record({ tool: 'allow_change', ok: true, person: p.id, client: ctx.client });
-      const said = [quickVersion && `${quickVersion.name.toLowerCase()} in ${minutes(quickVersion.minutes * 60)}`, canWait && 'it can wait until after you leave', optional && 'it can be skipped', h && `${h.name} can do it`].filter(Boolean);
+      const said = [quickVersion && `${quickVersion.name.toLowerCase()} in ${minutes(quickVersion.minutes * 60)}`, canWait && 'it can wait until after you leave', optional && 'it can be skipped', h && `${h.name} can do it`, uses && `it needs the ${uses.trim().toLowerCase()} to themselves`].filter(Boolean);
       return say(ctx, `Got it: ${p.name}'s ${s.name.toLowerCase()}, ${said.length ? list(said as string[]) : 'no change'}. ${ctx.store.departure ? 'It applies from the next departure.' : 'I will only use it when time is short.'}`);
     },
   );
@@ -377,7 +382,7 @@ export function buildServer(ctx: Ctx): McpServer {
       if (gateMs <= now) return refuse(`${at} has already passed today. Say a later time.`);
       if (gateMs - now > 6 * 3_600_000) return refuse('That is more than six hours away. Start the departure closer to the time.');
       const rho = rhoOf(ctx.store.pace);
-      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho));
+      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho), weekdayMean(ctx.store.pace, rho, new Date(now).getDay()));
       const rerouted = commit(ctx, 'start_departure', dep, undefined, hh.people.map((p) => p.id));
       // An add-on cannot speak first, but Alexa's own reminders can: offer one, five minutes before the door.
       const remind = gateMs - now > 10 * 60_000 ? ` Shall I set a reminder for ${clock(gateMs - 5 * 60_000)}, five minutes before you leave?` : '';
@@ -409,13 +414,13 @@ export function buildServer(ctx: Ctx): McpServer {
       if (!r) return refuse(`${p.name} has nothing left to do. ${p.name} is ready to go.`);
       if (r.sample) {
         record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
-        if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others);
+        if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others, new Date(ctx.now()).getDay());
       }
       const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
       const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
       const pace = !next.current || Math.abs(next.pace) < 0.15 ? '' : next.pace > 0 ? ` ${p.name} is running slow this morning, so I've planned the rest longer.` : ` ${p.name} is quicker than usual this morning.`;
       const forIt = next.current ? Math.max(60, Math.round((next.stepEndMs - ctx.now()) / 60_000) * 60) : 0;
-      const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}, about ${minutes(forIt)}.${pace}` : `${p.name} is ready to go.`;
+      const lead = next.waitingFor ? `${p.name} is next for the ${next.waitingFor}.${pace}` : next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}, about ${minutes(forIt)}.${pace}` : `${p.name} is ready to go.`;
       const note = r.sample?.capped === 'long' ? ' That took far longer than usual, so I have counted it as a slow morning, not a new normal.' : '';
       return say(ctx, rerouted ? `${finished} done.${note} ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done.${note} ${lead}`);
     },
@@ -576,12 +581,13 @@ export function buildServer(ctx: Ctx): McpServer {
         d.setDate(d.getDate() + 1); // the next time it is that o'clock
         gateMs = d.getTime();
       }
-      const { starts } = planStarts(ctx.store.household, ctx.store.history, gateMs, rhoOf(ctx.store.pace));
+      const { starts, order } = planStarts(ctx.store.household, ctx.store.history, gateMs, rhoOf(ctx.store.pace));
       if (!starts.length) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
       const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} ${s.startMs <= now + 60_000 ? 'now' : `at ${clock(s.startMs)}`}`); // asked late, an alarm already past means: up now
       const wakes = new Set(ctx.store.household.people.filter((p) => p.steps.length).map((p) => p.wakeSec ?? WAKE_SEC));
       const allow = wakes.size === 1 ? ` That allows ${minutes([...wakes][0])} to get up.` : '';
-      return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow} Shall I set them?`);
+      const turns = order.map((o) => ` The ${o.space}: ${o.people.map((id) => ctx.store.household.people.find((p) => p.id === id)!.name).join(', then ')}.`).join('');
+      return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow}${turns} Shall I set them?`);
     },
   );
 
