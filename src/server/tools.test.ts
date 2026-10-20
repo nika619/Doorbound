@@ -45,6 +45,23 @@ test("with no name said, it works out who from the step, or asks", async () => {
   assert.equal((await say(21, 'step_done')).text, 'Who was that? Aarav, Isha, Dad or Mum?');
 });
 
+test('arrive-by and travel time: it works back to when to leave', async () => {
+  const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
+  store.household = household;
+  const now = new Date(2026, 9, 15, 7, 12).getTime();
+  const server = buildServer({ store, audit: new Audit(await mkdtemp(join(tmpdir(), 'audit-'))), client: 'test', boardHtml: () => '<html></html>', now: () => now, clockRate: 1 });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  const client = new Client({ name: 'alexa', version: '1' });
+  await client.connect(a);
+  await client.listTools();
+  const text = async (name: string, args: Record<string, unknown>) => ((await client.callTool({ name, arguments: args })).content as { text: string }[])[0].text;
+  assert.match(await text('start_departure', { arriveBy: '08:15', travelMinutes: 20 }), /^School run started to be there by 8:15, allowing 23 minutes for the 20-minute journey\. Everyone is on time\. Leave at 7:52, in 40 minutes\./);
+  assert.equal(store.departure!.gateMs, new Date(2026, 9, 15, 7, 52).getTime(), 'the journey is planned at its long end, as the morning is');
+  assert.match(await text('plan_tomorrow', { arriveBy: '8:15 am', travelMinutes: 20 }), /^To leave at 7:52 to be there by 8:15, allowing 23 minutes for the 20-minute journey with an 85% chance/);
+  assert.equal(await text('start_departure', {}), 'When do you need to leave? Say a time, or when you need to be there and how long it takes to get there.');
+});
+
 test('a departure that crosses midnight is tonight, not this morning', async () => {
   const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
   store.household = household;

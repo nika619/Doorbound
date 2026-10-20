@@ -27,6 +27,8 @@ export interface Ctx {
   clockRate: number;
   /** This household's private link for a TV or tablet, when the server can make one. */
   screenLink?: string;
+  /** This household's private address for a door sensor or home routine to say "we've left". */
+  doorLink?: string;
 }
 
 // ---------- the board the screen draws ----------
@@ -192,6 +194,39 @@ function noOne(ctx: Ctx, who: string) {
   return refuse(names.length ? `I don't have anyone called ${who}. The household is ${list(names)}.` : 'Nobody is set up yet. Tell me someone\'s morning routine first.');
 }
 const NO_DEPARTURE = 'There is no departure running. Say, for example, start the school run, leave at 7:40.';
+
+/** How much a journey's time varies around what traffic says (log scale): an assumption, about +-15%. */
+const TRAVEL_SIGMA = 0.15;
+
+/** When to leave: said outright, or worked back from where to be by and how long the journey takes. */
+const whenParams = {
+  leaveAt: leaveAt.optional(),
+  arriveBy: leaveAt.optional().describe('Where they must be by, for example the school bell from the calendar, "08:15"'),
+  travelMinutes: z.number().min(1).max(180).optional().describe('How long the journey takes, for example from traffic, with arriveBy'),
+};
+function leaveTime(nowMs: number, w: { leaveAt?: string; arriveBy?: string; travelMinutes?: number }): { gateMs: number; arrive?: string } | Result {
+  if (w.leaveAt) return { gateMs: gateFrom(w.leaveAt, nowMs) };
+  if (w.arriveBy && w.travelMinutes) {
+    const by = gateFrom(w.arriveBy, nowMs + w.travelMinutes * 60_000);
+    // Journeys vary too: plan for the long end (TARGET) of a log-normal around the time given.
+    const journeySec = quantile({ mu: Math.log(w.travelMinutes * 60), sigma: TRAVEL_SIGMA }, TARGET);
+    return { gateMs: by - Math.round(journeySec / 60) * 60_000, arrive: ` to be there by ${clock(by)}, allowing ${minutes(journeySec)} for the ${Math.round(w.travelMinutes)}-minute journey` };
+  }
+  return refuse('When do you need to leave? Say a time, or when you need to be there and how long it takes to get there.');
+}
+
+/** The household is out of the door (or the departure is cancelled): what end_departure and the door hook both do. */
+export function endDeparture(ctx: Ctx, left: boolean, tool = 'end_departure'): string | null {
+  const dep = ctx.store.departure;
+  if (!dep) return null;
+  const now = ctx.now();
+  // Out of the door means ready, whatever was not said; a cancelled morning is scored for nobody.
+  ctx.store.departure = left ? dep.lanes.reduce((d, l) => markReady(d, l.personId, now) ?? d, dep) : { ...dep, forecasts: [] };
+  commit(ctx, tool, null);
+  if (!left) return `${dep.name} cancelled.`;
+  const lateMin = Math.round((now - dep.gateMs) / 60_000);
+  return `${dep.name} done${lateMin > 1 ? `, ${minutes(lateMin * 60)} after ${clock(dep.gateMs)}` : ', on time'}. Have a good day.`;
+}
 
 /**
  * Who a sentence is about. Alexa+ does not tell an add-on who is speaking, so "I'm done" can arrive with no
@@ -369,24 +404,26 @@ export function buildServer(ctx: Ctx): McpServer {
     'start_departure',
     {
       title: 'Start a departure',
-      description: 'Use when the customer starts getting everyone out of the door, for example "start the school run, we leave at 7:40". Plans every routine against the departure time using how long steps have really taken before. Returns the board.',
-      inputSchema: z.object({ leaveAt, name: name.optional().describe('Name of the departure, default "School run"') }),
+      description: 'Use when the customer starts getting everyone out of the door, for example "start the school run, we leave at 7:40" or "we need to be at school by 8:15, it\'s a 20-minute drive" (arriveBy and travelMinutes; take them from the calendar and traffic when the customer does not say). Plans every routine against the departure time using how long steps have really taken before. Returns the board.',
+      inputSchema: z.object({ ...whenParams, name: name.optional().describe('Name of the departure, default "School run"') }),
       ...out,
       _meta: { ui },
     },
-    async ({ leaveAt: at, name: label }) => {
+    async ({ name: label, ...when }) => {
       const now = ctx.now();
       const hh = ctx.store.household;
       if (!hh.people.some((p) => p.steps.length)) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
-      const gateMs = gateFrom(at, now);
-      if (gateMs <= now) return refuse(`${at} has already passed today. Say a later time.`);
+      const w = leaveTime(now, when);
+      if ('content' in w) return w;
+      const gateMs = w.gateMs;
+      if (gateMs <= now) return refuse(`${when.leaveAt ? `${when.leaveAt} has` : 'That leaving time has'} already passed today. Say a later time.`);
       if (gateMs - now > 6 * 3_600_000) return refuse('That is more than six hours away. Start the departure closer to the time.');
       const rho = rhoOf(ctx.store.pace);
       const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho), weekdayMean(ctx.store.pace, rho, new Date(now).getDay()));
       const rerouted = commit(ctx, 'start_departure', dep, undefined, hh.people.map((p) => p.id));
       // An add-on cannot speak first, but Alexa's own reminders can: offer one, five minutes before the door.
       const remind = gateMs - now > 10 * 60_000 ? ` Shall I set a reminder for ${clock(gateMs - 5 * 60_000)}, five minutes before you leave?` : '';
-      return say(ctx, `${dep.name} started. ${summary(ctx, ctx.store.departure!, rerouted)}${remind}`);
+      return say(ctx, `${dep.name} started${w.arrive ?? ''}. ${summary(ctx, ctx.store.departure!, rerouted)}${remind}`);
     },
   );
 
@@ -568,14 +605,16 @@ export function buildServer(ctx: Ctx): McpServer {
       title: 'When everyone has to start',
       description:
         'Use the evening before, when the customer asks when people need to get up or start, for example "we leave at 7:40 tomorrow, when should everyone be up?". Works back from the departure time to the latest time each person can start their routine and still give the household an 85% chance of leaving on time together, from how long their steps really take. Changes nothing. Offer to set an alarm for each person at their time.',
-      inputSchema: z.object({ leaveAt }),
+      inputSchema: z.object(whenParams),
       annotations: { readOnlyHint: true },
       ...out,
       _meta: { ui },
     },
-    async ({ leaveAt: at }) => {
+    async (when) => {
       const now = ctx.now();
-      let gateMs = gateFrom(at, now);
+      const w = leaveTime(now, when);
+      if ('content' in w) return w;
+      let gateMs = w.gateMs;
       if (gateMs <= now) {
         const d = new Date(gateMs);
         d.setDate(d.getDate() + 1); // the next time it is that o'clock
@@ -587,7 +626,7 @@ export function buildServer(ctx: Ctx): McpServer {
       const wakes = new Set(ctx.store.household.people.filter((p) => p.steps.length).map((p) => p.wakeSec ?? WAKE_SEC));
       const allow = wakes.size === 1 ? ` That allows ${minutes([...wakes][0])} to get up.` : '';
       const turns = order.map((o) => ` The ${o.space}: ${o.people.map((id) => ctx.store.household.people.find((p) => p.id === id)!.name).join(', then ')}.`).join('');
-      return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow}${turns} Shall I set them?`);
+      return say(ctx, `To leave at ${clock(gateMs)}${w.arrive ?? ''} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow}${turns} Shall I set them?`);
     },
   );
 
@@ -606,6 +645,23 @@ export function buildServer(ctx: Ctx): McpServer {
       ctx.screenLink
         ? say(ctx, `Open this link in the browser on that screen: ${ctx.screenLink} . Keep it private: anyone with it can see your household's board.`)
         : refuse('This Doorbound server has no TV link set up. Its owner can set SCREEN_KEY.'),
+  );
+
+  registerAppTool(
+    server,
+    'door_link',
+    {
+      title: 'Let the front door say when you leave',
+      description: "Use when the customer wants a door sensor, smart lock, Ring device or a home routine to tell Doorbound when the household goes out. Returns this household's private web address to send a POST to when the front door opens; from 15 minutes before leaving time, that ends the morning as \"we've left\". Changes nothing.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+      ...out,
+      _meta: { ui },
+    },
+    async () =>
+      ctx.doorLink
+        ? say(ctx, `Have your door sensor or home routine send a POST to ${ctx.doorLink} when the front door opens. From 15 minutes before leaving time, that counts as everyone out of the door. Keep it private.`)
+        : refuse('This Doorbound server has no door link set up. Its owner can use AUTH_TOKEN with POST /hooks/left.'),
   );
 
   registerAppTool(
@@ -641,15 +697,8 @@ export function buildServer(ctx: Ctx): McpServer {
       _meta: { ui },
     },
     async ({ left = true }) => {
-      const dep = ctx.store.departure;
-      if (!dep) return refuse(NO_DEPARTURE);
-      const now = ctx.now();
-      // Out of the door means ready, whatever was not said; a cancelled morning is scored for nobody.
-      ctx.store.departure = left ? dep.lanes.reduce((d, l) => markReady(d, l.personId, now) ?? d, dep) : { ...dep, forecasts: [] };
-      commit(ctx, 'end_departure', null);
-      if (!left) return say(ctx, `${dep.name} cancelled.`);
-      const lateMin = Math.round((now - dep.gateMs) / 60_000);
-      return say(ctx, `${dep.name} done${lateMin > 1 ? `, ${minutes(lateMin * 60)} after ${clock(dep.gateMs)}` : ', on time'}. Have a good day.`);
+      const said = endDeparture(ctx, left);
+      return said ? say(ctx, said) : refuse(NO_DEPARTURE);
     },
   );
 
