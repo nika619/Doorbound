@@ -93,13 +93,20 @@ export function route(utterance: string, people: string[], speaker: string | nul
     if (at) return { tool: 'change_departure', args: { leaveAt: at } };
   }
   // "Isha's still in the shower" / "Aarav needs five more minutes"
-  if (who && /\bstill\b|more minutes?|running (late|behind|over)|needs? (more|longer|another)/.test(lower)) {
+  // With no name and no known speaker (as on real Alexa+), the step said is passed on and the server works out who.
+  const stepSaid = (re: RegExp) => lower.match(re)?.[1]?.trim();
+  if (/\bstill\b|more minutes?|running (late|behind|over)|needs? (more|longer|another)/.test(lower) && (who || /\bstill (in|on|doing|having|at)\b/.test(lower))) {
     const extra = lower.match(new RegExp(String.raw`${NUM} more minutes?|another ${NUM} minutes?`));
     const n = extra ? num(extra[1] ?? extra[2]) : undefined;
-    return { tool: 'still_going', args: { person: who, ...(n ? { extraMinutes: n } : {}) } };
+    const step = who ? undefined : stepSaid(/\bstill (?:in|on|doing|having|at) (?:the |her |his |my )?([a-z ]+?)(?:[,.]|$)/);
+    return { tool: 'still_going', args: { ...(who ? { person: who } : step ? { step } : {}), ...(n ? { extraMinutes: n } : {}) } };
   }
-  // "I'm done" / "Aarav has finished breakfast"
+  // "I'm done" / "Aarav has finished breakfast" / "the shower's done"
   if (who && /\b(done|finished|ready|all set)\b/.test(lower)) return { tool: 'step_done', args: { person: who } };
+  if (/\b(done|finished)\b/.test(lower)) {
+    const step = stepSaid(/\b(?:done|finished) with (?:the |her |his |my )?([a-z ]+?)(?:[,.]|$)/) ?? stepSaid(/^(?:the |my |her |his )?([a-z ]+?)(?:'s| is) (?:done|finished)/);
+    return { tool: 'step_done', args: step ? { step } : {} };
+  }
 
   // "Isha showers for 8 minutes, then gets dressed for 6, then has breakfast for 4"
   if (named) {

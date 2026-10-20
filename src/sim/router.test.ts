@@ -15,7 +15,12 @@ test('starting a departure, by clock time or by minutes from now', () => {
 test('who finished, by name or by the voice speaking', () => {
   assert.deepEqual(r("Aarav's done with breakfast"), { tool: 'step_done', args: { person: 'Aarav' } });
   assert.deepEqual(r("I'm done", 'Isha'), { tool: 'step_done', args: { person: 'Isha' } });
-  assert.equal(r("I'm done", null), null, 'without a name or a known speaker, it does not guess');
+  // As on real Alexa+, which does not say who is speaking: the step goes on and the server works out who.
+  assert.deepEqual(r("I'm done"), { tool: 'step_done', args: {} });
+  assert.deepEqual(r("The shower's done"), { tool: 'step_done', args: { step: 'shower' } });
+  assert.deepEqual(r("I'm done with breakfast."), { tool: 'step_done', args: { step: 'breakfast' } });
+  assert.deepEqual(r("She's still in the shower"), { tool: 'still_going', args: { step: 'shower' } });
+  assert.notEqual(r('Are we ready?')?.tool, 'step_done');
 });
 
 test('running over, with and without a number', () => {
