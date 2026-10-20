@@ -12,7 +12,7 @@ const at = (min: number) => T0 + min * MIN;
 const near = (a: number, b: number, tol = 1) => Math.abs(a - b) <= tol;
 
 test('a departure plans with learned times, not stated ones, and says how sure it is', () => {
-  const dep = startDeparture(household, learnedHistory(), 'School run', at(35), at(0));
+  const dep = startDeparture(household, learnedHistory(), 'School run', at(40), at(0));
   const shower = dep.lanes[1].tasks[0];
   assert.ok(Math.exp(shower.mu) > 11 * 60 && Math.exp(shower.mu) < 14 * 60, 'a typical shower is planned near the 14 minutes it takes, not the 8 she said');
   const [aarav, isha, dad] = project(dep, at(0));

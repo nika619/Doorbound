@@ -8,10 +8,10 @@
 
 ![The board re-routing live: an amber scan crosses the runway, Isha's bag lifts out of her lane and lands in Dad's, and her chance climbs back](docs/reroute.gif)
 
-> "Alexa, start the school run. We leave in 37 minutes."
+> "Alexa, start the school run. We leave in 40 minutes."
 > "I'm done with breakfast."
-> "Isha's still in the shower. Nine more minutes, she says."
-> **Alexa:** "Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha. Everyone still leaves at 7:49, and Isha is now at 90%."
+> "Isha's still in the shower. Ten more minutes, she says."
+> **Alexa:** "Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha. Everyone still leaves at 7:52, and Isha is back on track, with about a 9 in 10 chance."
 
 Built for the Build, Ship, Shape: Amazon Developer Hackathon, Alexa+ track. A self-hosted MCP server over Streamable HTTP (protocol 2025-11-25, and 2026-07-28 for clients that negotiate it), with an MCP App that is the board. Run it and open http://localhost:3939 for the story, or http://localhost:3939/sim to talk to it.
 

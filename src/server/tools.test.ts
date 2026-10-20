@@ -118,15 +118,15 @@ test('the demo morning, as Alexa says it', async () => {
     return { text: (r.content as { text: string }[])[0].text, error: r.isError === true, board: r.structuredContent as { rev: number } | undefined };
   };
 
-  const start = await say(0, 'start_departure', { leaveAt: '07:49' });
+  const start = await say(0, 'start_departure', { leaveAt: '07:52' });
   assert.ok(!JSON.stringify(start.board).includes('forecasts'), 'open forecasts are server bookkeeping, not board data');
-  assert.match(start.text, /^School run started\. Everyone is on time\. Leave at 7:49, in 37 minutes\. Isha is the tightest, with about a 9 in 10 chance\. Shall I set a reminder for 7:44, five minutes before you leave\?$/);
+  assert.match(start.text, /^School run started\. Everyone is on time\. Leave at 7:52, in 40 minutes\. Isha is the tightest, with about a 9 in 10 chance\. Shall I set a reminder for 7:47, five minutes before you leave\?$/);
   await say(8.1, 'step_done', { person: 'Dad' });
   await say(12.1, 'step_done', { person: 'aarav' });
-  const over = await say(14.5, 'still_going', { person: 'Isha', extraMinutes: 9 });
-  assert.match(over.text, /^Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha\. Everyone still leaves at 7:49, and Isha is back on track, with about a 9 in 10 chance\.$/);
+  const over = await say(14.5, 'still_going', { person: 'Isha', extraMinutes: 10 });
+  assert.match(over.text, /^Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha\. Everyone still leaves at 7:52, and Isha is back on track, with about a 9 in 10 chance\.$/);
   const undo = await say(14.6, 'undo_reroute');
-  assert.match(undo.text, /^Back to the old plan\. Isha is running late, with about (a [1-9] in \d+|an even) chance\.( Isha is \d+ minutes over on shower\.)? Leave at 7:49, or at 7:5\d to be sure\.$/);
+  assert.match(undo.text, /^Back to the old plan\. Isha is running late, with about (a [1-9] in \d+|an even) chance\.( Isha is \d+ minutes over on shower\.)? Leave at 7:52, or at (7:5\d|8:0\d) to be sure\.$/);
   const status = await say(15, 'departure_status');
   assert.ok(!status.error && status.board!.rev > start.board!.rev);
   assert.match((await say(15, 'how_accurate')).text, /^I've checked (none|only \d) of my chances against what really happened so far\./);
