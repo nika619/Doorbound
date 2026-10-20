@@ -129,6 +129,13 @@ function clatter(n: number) {
   }
 }
 /** Two soft notes, rising: something on the board changed for you. */
+/** A short line said aloud, only with the sound on and where the screen can speak; a chime alone otherwise. */
+function speak(text: string) {
+  if (!live() || !('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(text), { rate: 0.95 }));
+}
+
 function chime() {
   const a = live();
   if (!a) return;
@@ -343,6 +350,9 @@ function choreograph(rr: { changes: Change[] }) {
 }
 
 /** The tone of a chance: what the curve and the numbers are coloured by. */
+const SEVERITY: Record<string, number> = { done: 0, ok: 1, tight: 2, late: 3 };
+/** Steps already flagged as running over: each is announced once. */
+const nudged = new Set<string>();
 const toneOf = (v: LaneView) => (v.status === 'ready' ? 'done' : v.status === 'late' ? 'late' : v.status === 'tight' ? 'tight' : 'ok');
 
 function rowFor(id: string, index: number): Row {
@@ -544,6 +554,15 @@ function second(animate = false) {
       r.done.disabled = !v.current;
       const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}${left ? `, ${left.text} on ${v.current.name}` : ''}${pc > 0 ? `, running ${pc}% slow today` : pc < 0 ? `, ${-pc}% ahead today` : ''}` : ''}.`;
       setText(r.sr, sentence);
+      // The screen speaks first where the server cannot: a chime when someone slips to TIGHT or LATE, or a step runs over.
+      const worse = SEVERITY[chanceTone] > SEVERITY[r.tone];
+      const overKey = left?.over && v.current ? `${lane.personId}/${v.current.key}` : '';
+      if ((r.tone && worse) || (overKey && !nudged.has(overKey))) {
+        if (overKey) nudged.add(overKey);
+        chime();
+        speak(overKey ? `${nameOf(lane.personId)}, ${v.current!.name.toLowerCase()} is over time.` : `${nameOf(lane.personId)} is ${chanceTone === 'late' ? 'running late' : 'cutting it fine'}.`);
+        announce(sentence);
+      }
       if (tone === 'late') late.push(sentence);
     }
     // The spread of when they will be ready, behind their steps.
