@@ -15,7 +15,7 @@ assert.equal(client.getNegotiatedProtocolVersion(), '2025-11-25');
 step('initialize negotiates protocol 2025-11-25 over Streamable HTTP');
 
 const { tools } = await client.listTools();
-assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'door_link', 'end_departure', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'ready_to_go', 'set_routine', 'start_departure', 'step_done', 'still_going', 'tv_link', 'undo_reroute']);
+assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'door_link', 'end_departure', 'forget_household', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'ready_to_go', 'set_routine', 'start_departure', 'step_done', 'still_going', 'tv_link', 'undo_reroute']);
 for (const t of tools) assert.ok(t.description && t.outputSchema, `${t.name} has a description and an output schema`);
 assert.deepEqual((tools.find((t) => t.name === 'get_board')!._meta as { ui: { visibility: string[] } }).ui.visibility, ['app']);
 step(`tools/list: ${tools.length} tools, one per thing a household says, each with an output schema; get_board is for the screen only`);

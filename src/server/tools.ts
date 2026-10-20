@@ -666,6 +666,33 @@ export function buildServer(ctx: Ctx): McpServer {
 
   registerAppTool(
     server,
+    'forget_household',
+    {
+      title: 'Delete everything Doorbound knows about this household',
+      description:
+        'Use when the customer asks to delete their data, forget the household or start again from nothing. Deletes every routine, learned time, pace and kept score, and any departure running. Cannot be undone: call it first without confirm, read the warning, and only call it with confirm: true after the customer says yes.',
+      inputSchema: z.object({ confirm: z.boolean().optional().describe('true only after the customer has heard the warning and said yes') }),
+      annotations: { destructiveHint: true },
+      ...out,
+      _meta: { ui },
+    },
+    async ({ confirm }) => {
+      if (!confirm) return say(ctx, "That deletes everyone's routines, every learned time and the score kept for this household, and it cannot be undone. Shall I delete it?");
+      const s = ctx.store;
+      s.household = { people: [] };
+      s.history = new Map();
+      s.departure = null;
+      s.pace = { products: 0, pairs: 0 };
+      s.scores = [];
+      s.touch();
+      void s.save();
+      ctx.audit.record({ tool: 'forget_household', ok: true, client: ctx.client });
+      return say(ctx, 'Done. Doorbound has forgotten this household. Tell me a routine to start again.');
+    },
+  );
+
+  registerAppTool(
+    server,
     'how_accurate',
     {
       title: 'How honest the chances have been',

@@ -13,6 +13,7 @@ import { Audit } from './audit.ts';
 import { baseHeaders, bearer, BodyTooLarge, clientOf, isLoopback, pageCsp, RateLimiter, readBody, tokenMatches, type PageHashes } from './guard.ts';
 import { consentPage, keyPage, linkHeaders, page } from './linkpage.ts';
 import { accessOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
+import { RETENTION_DAYS, sweep } from './retention.ts';
 import { Store } from './store.ts';
 import { boardOf, buildServer, endDeparture, type Ctx } from './tools.ts';
 
@@ -87,6 +88,14 @@ async function householdStore(id: string): Promise<Store> {
   return s;
 }
 const householdExists = (id: string) => households.has(id) || existsSync(join(dataDir, 'households', id, 'household.json'));
+// Households nobody has used for RETENTION days are deleted: checked at start and once a day.
+const retention = Number(env.HOUSEHOLD_RETENTION_DAYS ?? RETENTION_DAYS);
+if (!(Number.isInteger(retention) && retention >= 30 && retention <= 3650)) fail('HOUSEHOLD_RETENTION_DAYS must be a whole number of days from 30 to 3650.');
+const forgetIdle = async () => {
+  for (const id of await sweep(join(dataDir, 'households'), Date.now(), retention)) households.delete(id);
+};
+void forgetIdle();
+setInterval(forgetIdle, 86_400_000).unref();
 const t0 = Date.now();
 // The demo clock is an explicit, labelled option for recording a morning in under two minutes.
 const now = DEMO_SPEED === 1 ? Date.now : () => t0 + (Date.now() - t0) * DEMO_SPEED;

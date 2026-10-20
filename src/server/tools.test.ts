@@ -1,6 +1,6 @@
 // The demo morning through the real MCP tools, on a fixed clock: what Alexa would say at each step.
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -43,6 +43,29 @@ test("with no name said, it works out who from the step, or asks", async () => {
   store.household = { people: [...household.people, { id: 'mum', name: 'Mum', steps: [{ id: 'yoga', name: 'Yoga', statedSec: 900 }] }] };
   await say(20, 'start_departure', { leaveAt: '08:20' });
   assert.equal((await say(21, 'step_done')).text, 'Who was that? Aarav, Isha, Dad or Mum?');
+});
+
+test('a household can be forgotten by voice, only after a yes, and its audit trail holds no names', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tools-'));
+  const store = await Store.open(dir);
+  store.household = household;
+  store.history = learnedHistory();
+  const audit = new Audit(dir);
+  const server = buildServer({ store, audit, client: 'test', boardHtml: () => '<html></html>', now: () => Date.now(), clockRate: 1 });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  const client = new Client({ name: 'alexa', version: '1' });
+  await client.connect(a);
+  await client.listTools();
+  const text = async (name: string, args: Record<string, unknown> = {}) => ((await client.callTool({ name, arguments: args })).content as { text: string }[])[0].text;
+  await text('set_routine', { person: 'Isha', steps: [{ name: 'Shower', minutes: 8 }] });
+  assert.match(await text('forget_household'), /cannot be undone\. Shall I delete it\?$/);
+  assert.equal(store.household.people.length, 3, 'nothing is deleted without a yes');
+  assert.equal(await text('forget_household', { confirm: true }), 'Done. Doorbound has forgotten this household. Tell me a routine to start again.');
+  assert.deepEqual([store.household.people.length, store.history.size, store.departure, store.scores.length], [0, 0, null, 0]);
+  await audit.flush();
+  const log = await readFile(join(dir, 'audit.jsonl'), 'utf8');
+  assert.ok(!/isha/i.test(log) && /"person":"[0-9a-f]{12}"/.test(log), 'people appear only as hashes');
 });
 
 test('arrive-by and travel time: it works back to when to leave', async () => {
