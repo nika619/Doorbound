@@ -51,6 +51,14 @@ export class RateLimiter {
     return Math.ceil((1 - b.tokens) / this.perSecond);
   }
 
+  /** What take() would say, without spending anything: for limits that only count failures. */
+  peek(client: string, nowMs: number): number {
+    const b = this.buckets.get(client);
+    if (!b) return 0;
+    const tokens = Math.min(this.burst, b.tokens + ((nowMs - b.at) / 1000) * this.perSecond);
+    return tokens >= 1 ? 0 : Math.ceil((1 - tokens) / this.perSecond);
+  }
+
   get size() {
     return this.buckets.size;
   }

@@ -50,3 +50,13 @@ test('page CSP allows nothing by default and only hashed inline code', () => {
   assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|\*/);
   assert.match(csp, /frame-ancestors 'none'/);
 });
+
+test('peek says what take would, without spending: for limits that count only failures', () => {
+  const rl = new RateLimiter(1, 2);
+  assert.equal(rl.peek('a', 0), 0, 'a client never seen is free');
+  rl.take('a', 0);
+  rl.take('a', 0);
+  assert.equal(rl.peek('a', 0), 1);
+  assert.equal(rl.peek('a', 0), 1, 'peeking spends nothing');
+  assert.equal(rl.peek('a', 1000), 0, 'and it refills');
+});
