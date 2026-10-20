@@ -120,7 +120,7 @@ export function findReroute(dep: Departure, household: Household, history: Histo
       for (const h of def.helpers ?? []) {
         const to = laneOf.get(h);
         if (to === undefined || to === li) continue;
-        const hd = durationOf(history, h, t.stepId, def.statedSec);
+        const hd = durationOf(history, h, t.stepId, def.statedSec, dep.bias);
         opts.push({ ...base, kind: 'handoff', cost: COST.handoff, to, dFrom: gone, add: addPart(new Float64Array(PARTS), stepMoments(hd, paces[to], dep.rho), hd.sigma) });
       }
       if (def.canWait) opts.push({ ...base, kind: 'later', cost: COST.later, dFrom: gone });

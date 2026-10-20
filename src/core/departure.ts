@@ -7,7 +7,7 @@
 // 85% confidence, a 93% chance of making the gate". The steps of one person's morning share a pace
 // (pace.ts): each finished step says how today is going, and the rest of their morning moves with it.
 
-import { keyOf, type History } from './learn.ts';
+import { keyOf, statedBias, type History } from './learn.ts';
 import { addPart, adjust, censor, householdPace, paceFactor, paceOf, PARTS, readings, RHO_PRIOR, total, type Pace } from './pace.ts';
 import { cdf, moments, phi, posterior, PRIOR_SIGMA, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
 
@@ -105,6 +105,8 @@ export interface Departure {
   kappa?: number;
   /** What this weekday usually brings to everyone's pace (pace.ts weekdayMean); 0 until the household shows one. */
   paceMean?: number;
+  /** The household's planning-fallacy correction to stated times (learn.ts statedBias) when it started. */
+  bias?: number;
   /** Chances given and not yet scored (score.ts). */
   forecasts?: { personId: string; p: number; atMs: number }[];
 }
@@ -117,16 +119,21 @@ export const GRACE_MS = 30_000;
 const EXTEND_SIGMA = 0.25;
 
 /** The learned duration of one person's step: their history, with what was said as the prior. */
-export const durationOf = (history: History, personId: string, stepId: string, statedSec: number): LogNormal =>
-  posterior(statedSec, history.get(keyOf(personId, stepId)));
+export const durationOf = (history: History, personId: string, stepId: string, statedSec: number, bias = 0): LogNormal =>
+  posterior(statedSec * Math.exp(bias), history.get(keyOf(personId, stepId)));
+
+/** The household's planning-fallacy correction for this history (learn.ts statedBias), for one step: from all the others. */
+export const biasOf = (household: Household, history: History, leaveOut?: string) =>
+  statedBias(history, household.people.flatMap((p) => p.steps.map((s) => ({ personId: p.id, stepId: s.id, statedSec: s.statedSec }))), leaveOut);
 
 export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number, rho = RHO_PRIOR, kappa = 0, paceMean = 0): Departure {
+  const bias = biasOf(household, history);
   const lanes = household.people.map((p) => ({
     personId: p.id,
     startedAtMs: nowMs,
-    tasks: p.steps.map((s) => ({ key: `${p.id}/${s.id}`, stepId: s.id, forPerson: p.id, name: s.name, state: 'todo' as const, ...durationOf(history, p.id, s.id, s.statedSec) , ...(s.uses ? { uses: s.uses } : {}) })),
+    tasks: p.steps.map((s) => ({ key: `${p.id}/${s.id}`, stepId: s.id, forPerson: p.id, name: s.name, state: 'todo' as const, ...durationOf(history, p.id, s.id, s.statedSec, biasOf(household, history, keyOf(p.id, s.id))) , ...(s.uses ? { uses: s.uses } : {}) })),
   }));
-  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho, kappa, ...(paceMean ? { paceMean } : {}) };
+  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho, kappa, ...(paceMean ? { paceMean } : {}), ...(bias ? { bias } : {}) };
 }
 
 // ---------- reading a lane ----------
@@ -527,7 +534,7 @@ export function applyChanges(dep: Departure, household: Household, history: Hist
       const to = byPerson.get(c.to!)!;
       const at = currentIndex(to);
       // Help now: straight after what the helper is doing, so it is done well before the gate.
-      to.tasks.splice(at < 0 ? to.tasks.length : at + 1, 0, { ...task, ...durationOf(history, c.to!, task.stepId, def.statedSec), notBeforeMs: nowMs, extend: undefined });
+      to.tasks.splice(at < 0 ? to.tasks.length : at + 1, 0, { ...task, ...durationOf(history, c.to!, task.stepId, def.statedSec, dep.bias), notBeforeMs: nowMs, extend: undefined });
     }
   }
   return lanes;

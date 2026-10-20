@@ -23,6 +23,29 @@ export function record(history: History, personId: string, stepId: string, secon
   }
 }
 
+/** Real mornings of any step count as this many of none before the household's habit is trusted. */
+const BIAS_PRIOR = 10;
+
+/**
+ * The household's own planning fallacy: how its stated times compare with what happens, across every step
+ * that has real mornings, as the mean log ratio, shrunk towards none by BIAS_PRIOR mornings and kept within
+ * a factor of e^1.5. 0.47 means things take about 1.6 times what is said. Applied to every stated time, it
+ * corrects steps with few or no mornings of their own. O(steps).
+ */
+export function statedBias(history: History, stated: Iterable<{ personId: string; stepId: string; statedSec: number }>, leaveOut?: string): number {
+  let sum = 0;
+  let n = 0;
+  for (const { personId, stepId, statedSec } of stated) {
+    // A step's own mornings already teach it directly; counting them here again would use them twice.
+    if (keyOf(personId, stepId) === leaveOut) continue;
+    for (const x of history.get(keyOf(personId, stepId)) ?? []) {
+      sum += Math.log(x / statedSec);
+      n++;
+    }
+  }
+  return Math.max(-1.5, Math.min(1.5, sum / (BIAS_PRIOR + n)));
+}
+
 /** A learned difference worth telling someone about: at least 2 minutes and 25% off what they said. */
 export interface Insight {
   personId: string;

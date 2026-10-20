@@ -15,7 +15,7 @@
 // the person says it (10 minutes if they do not), with the same uncertainty as any stated step, so the
 // times given are alarm times and the 85% already allows for a slow start.
 
-import { durationOf, lanePart, startDeparture, TARGET, type Household } from './departure.ts';
+import { biasOf, durationOf, lanePart, startDeparture, TARGET, type Household } from './departure.ts';
 import type { History } from './learn.ts';
 import { total } from './pace.ts';
 import { cdf, moments, posterior, sum, type LogNormal } from './stats.ts';
@@ -100,13 +100,14 @@ export function planStarts(household: Household, history: History, gateMs: numbe
  */
 function stagger(household: Household, history: History, starts: Start[]): { space: string; people: string[] }[] {
   const out: { space: string; people: string[] }[] = [];
+  const bias = biasOf(household, history);
   const spaces = new Set(household.people.flatMap((p) => p.steps.flatMap((s) => (s.uses ? [s.uses] : []))));
   for (const space of spaces) {
     const users = starts.flatMap((s) => {
       const p = household.people.find((x) => x.id === s.personId)!;
       const k = p.steps.findIndex((x) => x.uses === space && !x.canWait && !x.optional);
       if (k < 0) return [];
-      const mean = (id: string, sec: number) => moments(durationOf(history, p.id, id, sec)).mean * 1000;
+      const mean = (id: string, sec: number) => moments(durationOf(history, p.id, id, sec, bias)).mean * 1000;
       const arrive = moments(posterior(p.wakeSec ?? WAKE_SEC)).mean * 1000 + p.steps.slice(0, k).filter((x) => !x.canWait && !x.optional).reduce((a, x) => a + mean(x.id, x.statedSec), 0);
       return [{ s, arrive, use: mean(p.steps[k].id, p.steps[k].statedSec) }];
     });
