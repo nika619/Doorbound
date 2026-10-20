@@ -15,7 +15,7 @@ assert.equal(client.getNegotiatedProtocolVersion(), '2025-11-25');
 step('initialize negotiates protocol 2025-11-25 over Streamable HTTP');
 
 const { tools } = await client.listTools();
-assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'end_departure', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'ready_to_go', 'set_routine', 'start_departure', 'step_done', 'still_going', 'tv_link', 'undo_reroute']);
+assert.deepEqual(tools.map((t) => t.name).sort(), ['allow_change', 'change_departure', 'departure_status', 'door_link', 'end_departure', 'get_board', 'how_accurate', 'learned_times', 'plan_tomorrow', 'ready_to_go', 'set_routine', 'start_departure', 'step_done', 'still_going', 'tv_link', 'undo_reroute']);
 for (const t of tools) assert.ok(t.description && t.outputSchema, `${t.name} has a description and an output schema`);
 assert.deepEqual((tools.find((t) => t.name === 'get_board')!._meta as { ui: { visibility: string[] } }).ui.visibility, ['app']);
 step(`tools/list: ${tools.length} tools, one per thing a household says, each with an output schema; get_board is for the screen only`);
@@ -188,7 +188,18 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
     const tv = (await a.say('tv_link')).content[0].text.match(/#k=(\S+)/)![1];
     const board = (await (await fetch(new URL('/api/board', base), { headers: { 'X-Screen-Key': tv } })).json()) as { people: { name: string }[] };
     assert.deepEqual(board.people.map((p) => p.name), ['Noor'], "a household's TV link shows that household");
+    // A door sensor says "we've left": not before 15 minutes to leaving time, then it ends the morning.
+    const door = (await a.say('door_link')).content[0].text.match(/POST to (\S+) when/)![1];
+    const hook = new URL(door);
+    const early = await a.say('start_departure', { leaveAt: at(30) });
+    assert.ok(!(early as { isError?: boolean }).isError);
+    assert.equal((await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).status, 202, 'too early: ignored');
+    await a.say('change_departure', { leaveAt: at(10) });
+    const left = (await (await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).json()) as { left: boolean };
+    assert.equal(left.left, true);
+    assert.equal((await fetch(new URL('/hooks/left?k=k.0123456789abcdef0123456789abcdef.forged', base), { method: 'POST' })).status, 401);
     for (const x of [a, partner, b]) await x.close();
+    step('a front-door hook ends the morning, not before 15 minutes to leaving time; a forged key is refused');
     step('account linking: a new household with its key, a second account joining it, another household kept apart, its own TV link');
     const svc = new Client({ name: 'alexa-plus-service', version: '1.0.0' });
     await svc.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${access_token}` } } }));
