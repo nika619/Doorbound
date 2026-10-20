@@ -240,17 +240,22 @@ export interface LaneView {
   slackSec: number;
   /** Today's pace against a usual morning: 0.2 means this person's steps are running about 20% long. */
   pace: number;
+  /**
+   * When the step in progress should be done: its start plus its usual length at today's pace, or what was
+   * said when it ran over. Fixed while the step runs, so a countdown to it ticks down ("3 min left").
+   */
+  stepEndMs: number;
 }
 
 /** Where a person stands at `nowMs`. O(t). */
-export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: number, lp?: LanePace): LaneView {
+export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: number, lp = lanePace(lane, nowMs, rho)): LaneView {
   const idx = currentIndex(lane);
   const { acc, c, pace: p } = lanePart(lane, nowMs, rho, lp);
   const pace = p.n ? paceFactor(p, rho, lane.tasks.reduce((a, t) => a + t.sigma, 0) / lane.tasks.length) : 0;
   if (idx < 0) {
     const last = lane.tasks.findLast((t) => t.state === 'done');
     const readyMs = last?.doneAtMs ?? lane.startedAtMs;
-    return { personId: lane.personId, current: null, next: null, currentStartMs: readyMs, readyMs, expectedMs: readyMs, earlyMs: readyMs, lateMs: readyMs, pOnTime: readyMs <= gateMs ? 1 : 0, status: 'ready', slackSec: Math.round((gateMs - readyMs) / 1000), pace };
+    return { personId: lane.personId, current: null, next: null, currentStartMs: readyMs, readyMs, expectedMs: readyMs, earlyMs: readyMs, lateMs: readyMs, pOnTime: readyMs <= gateMs ? 1 : 0, status: 'ready', slackSec: Math.round((gateMs - readyMs) / 1000), pace, stepEndMs: readyMs };
   }
   const m = total(acc, c);
   const d = sum([m])!;
@@ -272,7 +277,15 @@ export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: numb
     status,
     slackSec: Math.round((gateMs - readyMs) / 1000),
     pace,
+    stepEndMs: stepEnd(lane, idx, rho, lp.before),
   };
+}
+
+/** The step in progress's target end: started plus its median at today's pace (or as said, if running over). */
+function stepEnd(lane: Lane, idx: number, rho: number, before: Pace): number {
+  const t = lane.tasks[idx];
+  if (t.extend) return t.extend.fromMs + Math.exp(t.extend.mu) * 1000;
+  return currentStartMs(lane, idx) + Math.exp(adjust(t, before, rho).mu) * 1000;
 }
 
 export function project(dep: Departure, nowMs: number): LaneView[] {

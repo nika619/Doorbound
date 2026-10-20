@@ -170,3 +170,12 @@ test('the runway puts done steps where they really were, the rest after the curr
   assert.equal(later.overrun, true, 'past its 85% time, the car is overrunning');
   assert.ok(later.endMs >= planned + MIN + GRACE_MS);
 });
+
+test('the step in progress has a fixed target end, so a countdown to it ticks down', () => {
+  const dep = startDeparture(household, new Map(), 'School run', at(40), at(0), 0);
+  const [, isha] = project(dep, at(2));
+  assert.ok(near(isha.stepEndMs, at(0) + 480_000, 1), 'an 8-minute shower started at 0 should end at 8');
+  assert.equal(project(dep, at(5))[1].stepEndMs, isha.stepEndMs, 'it does not drift as time passes');
+  const told = stillGoing(dep, 'isha', 5 * 60, at(9))!;
+  assert.ok(near(project(told, at(9))[1].stepEndMs, at(14), 1000), '"five more minutes" moves the target to then');
+});
