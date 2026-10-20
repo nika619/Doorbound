@@ -51,6 +51,7 @@ test('questions and undo', () => {
   assert.deepEqual(r('We leave at 7:40 tomorrow. When should everyone be up?'), { tool: 'plan_tomorrow', args: { leaveAt: '07:40' } });
   assert.equal(r('undo that')!.tool, 'undo_reroute');
   assert.deepEqual(r("we've left"), { tool: 'end_departure', args: {} });
+  assert.deepEqual(r("We need to be at school by 8:15, it's a 20 minute drive"), { tool: 'start_departure', args: { arriveBy: '08:15', travelMinutes: 20 } });
   assert.deepEqual(r('cancel the school run'), { tool: 'end_departure', args: { left: false } });
 });
 

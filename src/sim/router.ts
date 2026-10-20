@@ -79,6 +79,13 @@ export function route(utterance: string, people: string[], speaker: string | nul
     return leaveAt ? { tool: 'plan_tomorrow', args: { leaveAt } } : null;
   }
 
+  // "we need to be at school by 8:15, it's a 20 minute drive"
+  const by = lower.match(new RegExp(String.raw`\bby (\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)\b.*?\b${NUM}[- ]minutes?\b`));
+  if (by) {
+    const arriveBy = clockOf(by[1]);
+    if (arriveBy) return { tool: 'start_departure', args: { arriveBy, travelMinutes: num(by[2]) } };
+  }
+
   // "start the school run, we leave at 7:40" / "... we leave in 28 minutes"
   if (/\bstart\b/.test(lower) && /\b(leave|leaving|run)\b/.test(lower)) {
     const name = text.match(/start (?:the )?([a-z ]+?)(?=[,.]|\s+(?:we|and|leaving|leave|at|in)\b|$)/i)?.[1]?.trim();
