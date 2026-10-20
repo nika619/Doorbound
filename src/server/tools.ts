@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
 import { kappaOf, readings, reading, recordPace, rhoOf } from '../core/pace.ts';
 import { planStarts } from '../core/tomorrow.ts';
 import { honesty, noteForecasts, settle } from '../core/score.ts';
-import { currentIndex, currentRemaining, departurePaces, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
+import { currentIndex, currentRemaining, departurePaces, markDone, markReady, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
 import { quantile, sum } from '../core/stats.ts';
@@ -392,7 +392,31 @@ export function buildServer(ctx: Ctx): McpServer {
       const pct = Math.round(Math.abs(next.pace) * 100);
       const pace = !next.current || pct < 15 ? '' : next.pace > 0 ? ` ${p.name} is running about ${pct}% slow this morning, so I've planned the rest longer.` : ` ${p.name} is about ${pct}% quicker than usual this morning.`;
       const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}.${pace}` : `${p.name} is ready to go.`;
-      return say(ctx, rerouted ? `${finished} done. ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done. ${lead}`);
+      const note = r.sample?.capped === 'long' ? ' That took far longer than usual, so I have counted it as a slow morning, not a new normal.' : '';
+      return say(ctx, rerouted ? `${finished} done.${note} ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done.${note} ${lead}`);
+    },
+  );
+
+  registerAppTool(
+    server,
+    'ready_to_go',
+    {
+      title: 'Someone is ready to leave',
+      description: 'Use when someone is ready to go, for example "I\'m ready", "Isha\'s ready to go" or "Aarav\'s all set". Marks all of their remaining steps done at once, so a family only has to say when they start and when each person is ready; every "done" in between makes the plan smarter. If it is unclear who, the reply asks; pass the answer back as person. Returns the board.',
+      inputSchema: z.object({ person: whoParams.person }),
+      ...out,
+      _meta: { ui },
+    },
+    async ({ person }) => {
+      const dep = ctx.store.departure;
+      if (!dep) return refuse(NO_DEPARTURE);
+      const p = whoFor(ctx, dep, person, undefined);
+      if (asked(p)) return p;
+      const next = markReady(dep, p.id, ctx.now());
+      if (!next) return refuse(`${p.name} has nothing left to do. ${p.name} is ready to go.`);
+      commit(ctx, 'ready_to_go', next, p.id);
+      const left = project(ctx.store.departure!, ctx.now()).filter((v) => v.current).length;
+      return say(ctx, `${p.name} is ready to go.${left ? ` ${summary(ctx, ctx.store.departure!, false)}` : ' Everyone is ready. Have a good day.'}`);
     },
   );
 
@@ -578,17 +602,22 @@ export function buildServer(ctx: Ctx): McpServer {
     'end_departure',
     {
       title: 'End the departure',
-      description: 'Use when everyone has left, or the customer cancels the departure. Clears the board; learned times are kept. Returns the board.',
-      inputSchema: z.object({}),
+      description: "Use when everyone has left (\"we've left\", \"we're out of the door\"), or the customer cancels the departure (left: false). Leaving counts everyone not yet marked ready as ready now, so the morning is scored by when the household really went. Clears the board; learned times are kept. Returns the board.",
+      inputSchema: z.object({ left: z.boolean().optional().describe('true (the default) when everyone has gone out of the door; false when the departure is cancelled') }),
       annotations: { idempotentHint: true },
       ...out,
       _meta: { ui },
     },
-    async () => {
-      if (!ctx.store.departure) return refuse(NO_DEPARTURE);
-      const name = ctx.store.departure.name;
+    async ({ left = true }) => {
+      const dep = ctx.store.departure;
+      if (!dep) return refuse(NO_DEPARTURE);
+      const now = ctx.now();
+      // Out of the door means ready, whatever was not said; a cancelled morning is scored for nobody.
+      ctx.store.departure = left ? dep.lanes.reduce((d, l) => markReady(d, l.personId, now) ?? d, dep) : { ...dep, forecasts: [] };
       commit(ctx, 'end_departure', null);
-      return say(ctx, `${name} ended. Have a good day.`);
+      if (!left) return say(ctx, `${dep.name} cancelled.`);
+      const lateMin = Math.round((now - dep.gateMs) / 60_000);
+      return say(ctx, `${dep.name} done${lateMin > 1 ? `, ${minutes(lateMin * 60)} after ${clock(dep.gateMs)}` : ', on time'}. Have a good day.`);
     },
   );
 

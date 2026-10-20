@@ -33,6 +33,12 @@ test("with no name said, it works out who from the step, or asks", async () => {
   for (const [m, who] of [[11, 'Aarav'], [12, 'Aarav'], [13, 'Aarav'], [14, 'Dad'], [15, 'Dad'], [16, 'Dad']] as const) await say(m, 'step_done', { person: who });
   assert.match((await say(18, 'step_done')).text, /^Get dressed done\./, 'only Isha is left, so it is her');
   assert.equal((await say(18.5, 'step_done', { person: 'me', step: 'piano' })).text.startsWith('Nobody is on piano'), true, '"me" is no name, not an unknown one');
+  assert.equal((await say(19, 'ready_to_go')).text, 'Isha is ready to go. Everyone is ready. Have a good day.');
+  assert.equal((await say(20, 'end_departure')).text, 'School run done, on time. Have a good day.');
+  // Only "start" and "we've left": everyone counts as ready when they went, and the morning is scored.
+  await say(21, 'start_departure', { leaveAt: '07:49' });
+  assert.match((await say(40, 'end_departure')).text, /^School run done, 3 minutes after 7:49\./);
+  assert.match((await say(41, 'how_accurate')).text, /^I've checked \d+ of my chances against what happened\. /, 'both mornings were scored');
   // Four people busy: too many to read out what each is on, so names only.
   store.household = { people: [...household.people, { id: 'mum', name: 'Mum', steps: [{ id: 'yoga', name: 'Yoga', statedSec: 900 }] }] };
   await say(20, 'start_departure', { leaveAt: '08:20' });
