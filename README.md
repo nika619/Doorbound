@@ -30,7 +30,7 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 - **The evening before.** "We leave at 7:40 tomorrow, when should everyone be up?" It works back to each person's latest start for an 85% chance together, with the most sleep in total, and offers to set alarms.
 - **It keeps score of itself.** Every chance it gives is checked against what happened; "How accurate have you been?" answers from your own mornings. [PILOT.md](PILOT.md) runs five real mornings and prints the report.
 - **Anyone, from anywhere.** "I'm done." "She's still in the shower." "We need to leave ten minutes early." "How are we doing?" "Dad can pack Isha's bag." Set up and run entirely by voice; each sentence is one tool call.
-- **On the Echo Show and beyond.** A small card inside the conversation, the full board on a tap, and the same board on a TV at `/board` (read-only). `/board#replay` plays the demo morning in the browser with no server state at all.
+- **On the Echo Show and beyond.** A small card inside the conversation, and the full board on a tap. For an always-on kitchen display, open the household's private TV link ("Alexa, put the board on the TV") in the Echo Show's browser, a tablet or a TV: it keeps the screen awake while a departure runs and catches up the moment it is shown again. Checked at Echo Show 5, 8, 10, 15 and 21 sizes (`npm run screens`: nothing scrolls, runs off or is set below 12 px). `/board#replay` plays the demo morning in the browser with no server state at all.
 
 ![Before the news: the board has already noticed Isha's shower running long and marks her TIGHT](docs/board-tight.jpg)
 

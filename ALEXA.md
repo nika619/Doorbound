@@ -90,6 +90,10 @@ The person linking sees one page: **start a new household**, or **join one with 
 
 The images are made from the product by `npm run build && node scripts/alexa-assets.mjs`.
 
+## An always-on kitchen display
+
+Inside Alexa+, the board appears in the conversation, and the host decides how long it stays. For a screen that shows the morning the whole time, ask "Alexa, put the board on the TV" and open the private link it gives in the Echo Show's web browser, a tablet or a TV. That page keeps the screen awake while a departure is running, refreshes every second, and catches up at once when it is shown again. The layout is checked at Echo Show 5, 8, 10, 15 and 21 sizes (`npm run screens`).
+
 ## 4. Deploy and talk to it
 
 ```bash
