@@ -22,6 +22,7 @@
     "smoke": "tsx scripts/smoke.ts",
     "pilot": "tsx scripts/pilot.ts",
     "conformance": "node scripts/conformance.mjs",
+    "screens": "node scripts/screens.mjs",
     "typecheck": "tsc --noEmit",
     "demo": "npm run build && tsx --env-file=demo.env src/server/main.ts",
     "video": "node scripts/record-demo.mjs",
