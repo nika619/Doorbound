@@ -47,7 +47,8 @@ export function route(utterance: string, people: string[], speaker: string | nul
   const who = named ?? (/\b(i|i'm|im|i am|me|my)\b/.test(lower) ? speaker : null);
 
   if (/\bundo\b|keep the old plan|change it back/.test(lower)) return { tool: 'undo_reroute', args: {} };
-  if (/\b(we've left|we have left|end the|cancel the|stop the)\b/.test(lower)) return { tool: 'end_departure', args: {} };
+  if (/\b(cancel the|stop the)\b/.test(lower)) return { tool: 'end_departure', args: { left: false } };
+  if (/\b(we've left|we have left|we're out|we are out|end the)\b/.test(lower)) return { tool: 'end_departure', args: {} };
   if (/how long does|really take|what have you learned|what did you learn/.test(lower)) return { tool: 'learned_times', args: {} };
   if (/how accurate|how reliable|how honest|can i trust|how right/.test(lower)) return { tool: 'how_accurate', args: {} };
   if (/how are we doing|who's late|who is late|how long until|are we on time/.test(lower)) return { tool: 'departure_status', args: {} };
@@ -102,7 +103,9 @@ export function route(utterance: string, people: string[], speaker: string | nul
     return { tool: 'still_going', args: { ...(who ? { person: who } : step ? { step } : {}), ...(n ? { extraMinutes: n } : {}) } };
   }
   // "I'm done" / "Aarav has finished breakfast" / "the shower's done"
-  if (who && /\b(done|finished|ready|all set)\b/.test(lower)) return { tool: 'step_done', args: { person: who } };
+  // "I'm ready" / "Isha's ready to go" / "Aarav's all set": all that is left, done (not "are we ready?")
+  if (/\b(ready|all set)\b/.test(lower) && !/\?|^(are|is)\b/.test(lower)) return { tool: 'ready_to_go', args: who ? { person: who } : {} };
+  if (who && /\b(done|finished)\b/.test(lower)) return { tool: 'step_done', args: { person: who } };
   if (/\b(done|finished)\b/.test(lower)) {
     const step = stepSaid(/\b(?:done|finished) with (?:the |her |his |my )?([a-z ]+?)(?:[,.]|$)/) ?? stepSaid(/^(?:the |my |her |his )?([a-z ]+?)(?:'s| is) (?:done|finished)/);
     return { tool: 'step_done', args: step ? { step } : {} };

@@ -21,6 +21,10 @@ test('who finished, by name or by the voice speaking', () => {
   assert.deepEqual(r("I'm done with breakfast."), { tool: 'step_done', args: { step: 'breakfast' } });
   assert.deepEqual(r("She's still in the shower"), { tool: 'still_going', args: { step: 'shower' } });
   assert.notEqual(r('Are we ready?')?.tool, 'step_done');
+  assert.notEqual(r('Are we ready?')?.tool, 'ready_to_go');
+  assert.deepEqual(r("Isha's ready to go"), { tool: 'ready_to_go', args: { person: 'Isha' } });
+  assert.deepEqual(r("I'm ready"), { tool: 'ready_to_go', args: {} });
+  assert.deepEqual(r('Aarav is all set.'), { tool: 'ready_to_go', args: { person: 'Aarav' } });
 });
 
 test('running over, with and without a number', () => {
@@ -45,7 +49,8 @@ test('questions and undo', () => {
   assert.deepEqual(r('Aarav can skip reading'), { tool: 'allow_change', args: { person: 'Aarav', step: 'Reading', optional: true } });
   assert.deepEqual(r('We leave at 7:40 tomorrow. When should everyone be up?'), { tool: 'plan_tomorrow', args: { leaveAt: '07:40' } });
   assert.equal(r('undo that')!.tool, 'undo_reroute');
-  assert.equal(r("we've left")!.tool, 'end_departure');
+  assert.deepEqual(r("we've left"), { tool: 'end_departure', args: {} });
+  assert.deepEqual(r('cancel the school run'), { tool: 'end_departure', args: { left: false } });
 });
 
 test('a routine in one sentence', () => {
