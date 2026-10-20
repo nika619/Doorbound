@@ -22,6 +22,7 @@ interface Dep {
   lanes: Lane[];
   rho: number;
   kappa?: number;
+  paceMean?: number;
   reroute: { atMs: number; changes: Change[]; stillLateSec: number; canUndo: boolean } | null;
 }
 interface Board {
@@ -728,6 +729,7 @@ function cardView() {
 
 /** "4 min left", "about now" or "2 min over": the step in progress against its target end. */
 function leftOn(v: LaneView, t: number): { text: string; over: boolean } {
+  if (v.waitingFor) return { text: `waiting · ${v.waitingFor}`, over: true };
   const ms = v.stepEndMs - t;
   if (ms > 30_000) return { text: `${Math.ceil(ms / 60_000)} min left`, over: false };
   if (ms > -60_000) return { text: 'about now', over: false };
