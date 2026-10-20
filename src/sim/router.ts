@@ -68,6 +68,8 @@ export function route(utterance: string, people: string[], speaker: string | nul
     const person = owner(waits[1]) ?? speaker;
     return person ? { tool: 'allow_change', args: { person, step: tidyStep(waits[2]), canWait: true } } : null;
   }
+  const space = lower.match(/^(\w+)'s (.+?) (?:uses|needs) the ([a-z]+)\.?$/);
+  if (space && owner(space[1])) return { tool: 'allow_change', args: { person: owner(space[1])!, step: tidyStep(space[2]), uses: space[3] } };
   const skips = lower.match(/^(\w+) can skip (?:the |their |his |her )?(.+?)\.?$/);
   if (skips && owner(skips[1])) return { tool: 'allow_change', args: { person: owner(skips[1])!, step: tidyStep(skips[2]), optional: true } };
 
