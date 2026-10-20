@@ -9,7 +9,7 @@
 
 import { keyOf, type History } from './learn.ts';
 import { addPart, adjust, censor, householdPace, paceFactor, paceOf, PARTS, readings, RHO_PRIOR, total, type Pace } from './pace.ts';
-import { cdf, moments, posterior, PRIOR_SIGMA, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
+import { cdf, moments, phi, posterior, PRIOR_SIGMA, quantile, remaining, sum, type LogNormal, type Moments } from './stats.ts';
 
 export interface StepDef {
   id: string;
@@ -23,6 +23,8 @@ export interface StepDef {
   optional?: boolean;
   /** Other people (ids) who may do it instead. */
   helpers?: string[];
+  /** A space it needs to itself, shared with others (say "bathroom"): one person at a time, first come first served. */
+  uses?: string;
 }
 
 export interface PersonDef {
@@ -51,6 +53,10 @@ export interface Task extends LogNormal {
   quick?: boolean;
   /** Finished together with the rest ("I'm ready"): its own length is unknown, so nothing is learned from it. */
   untimed?: boolean;
+  /** The shared space it needs (StepDef.uses). */
+  uses?: string;
+  /** When this person was let into that space after waiting for it: the step's clock starts then. */
+  inAtMs?: number;
   /** A handed-over task cannot have started before it was handed over. */
   notBeforeMs?: number;
   /** Someone said it is running over: from `fromMs`, this much more (log-normal) replaces the model. */
@@ -97,6 +103,8 @@ export interface Departure {
   rho: number;
   /** How strongly different people's mornings run slow together (pace.ts); 0 until the household shows it. */
   kappa?: number;
+  /** What this weekday usually brings to everyone's pace (pace.ts weekdayMean); 0 until the household shows one. */
+  paceMean?: number;
   /** Chances given and not yet scored (score.ts). */
   forecasts?: { personId: string; p: number; atMs: number }[];
 }
@@ -112,13 +120,13 @@ const EXTEND_SIGMA = 0.25;
 export const durationOf = (history: History, personId: string, stepId: string, statedSec: number): LogNormal =>
   posterior(statedSec, history.get(keyOf(personId, stepId)));
 
-export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number, rho = RHO_PRIOR, kappa = 0): Departure {
+export function startDeparture(household: Household, history: History, name: string, gateMs: number, nowMs: number, rho = RHO_PRIOR, kappa = 0, paceMean = 0): Departure {
   const lanes = household.people.map((p) => ({
     personId: p.id,
     startedAtMs: nowMs,
-    tasks: p.steps.map((s) => ({ key: `${p.id}/${s.id}`, stepId: s.id, forPerson: p.id, name: s.name, state: 'todo' as const, ...durationOf(history, p.id, s.id, s.statedSec) })),
+    tasks: p.steps.map((s) => ({ key: `${p.id}/${s.id}`, stepId: s.id, forPerson: p.id, name: s.name, state: 'todo' as const, ...durationOf(history, p.id, s.id, s.statedSec) , ...(s.uses ? { uses: s.uses } : {}) })),
   }));
-  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho, kappa };
+  return { name, gateMs, startedAtMs: nowMs, rev: 1, lanes, reroute: null, rho, kappa, ...(paceMean ? { paceMean } : {}) };
 }
 
 // ---------- reading a lane ----------
@@ -153,25 +161,122 @@ export const stepMoments = (d: LogNormal, pace: Pace, rho: number) => moments(ad
 export interface LanePace {
   before: Pace;
   ahead: Pace;
+  /** Queuing for a shared space: which, and the time until it is theirs (whoever is in, then whoever is ahead). */
+  wait?: { space: string; moments: Moments };
+  /** Waits expected later, at steps that will need a shared space someone else is likely to be using: where, and how long. */
+  later?: { at: number; moments: Moments }[];
 }
 
-/** One lane on its own: its finished steps' readings, then how long the current one has run. */
-export function lanePace(lane: Lane, nowMs: number, rho: number): LanePace {
-  const before = paceOf(lane, rho);
+/**
+ * Who is in each shared space and who is queuing, from the steps in progress: the person let in (inAtMs),
+ * else whoever reached it first; the rest queue in the order they arrived. Returns, per lane, the lanes
+ * ahead of it in its queue (the one inside first), or null when it is not queuing. O(P log P).
+ */
+export function queues(dep: Pick<Departure, 'lanes'>): (number[] | null)[] {
+  const at = dep.lanes.map((l) => {
+    const i = currentIndex(l);
+    const t = l.tasks[i];
+    return i < 0 || !t.uses ? null : { space: t.uses, in: t.inAtMs ?? -Infinity, arrived: currentStartMs(l, i) };
+  });
+  const out: (number[] | null)[] = dep.lanes.map(() => null);
+  for (const space of new Set(at.flatMap((a) => (a ? [a.space] : [])))) {
+    const users = at.flatMap((a, li) => (a?.space === space ? [li] : []));
+    // Inside: the latest let in, if anyone was; else the first to arrive. Then the queue, by arrival.
+    const inside = users.reduce((best, li) => (at[li]!.in > at[best]!.in || (at[li]!.in === at[best]!.in && at[li]!.arrived < at[best]!.arrived) ? li : best));
+    const line = [inside, ...users.filter((li) => li !== inside).sort((a, b) => at[a]!.arrived - at[b]!.arrived)];
+    line.forEach((li, k) => (out[li] = k ? line.slice(0, k) : null));
+  }
+  return out;
+}
+
+/** One lane on its own: its finished steps' readings, then how long the current one has run (unless it is only queuing). */
+export function lanePace(lane: Lane, nowMs: number, rho: number, queuing = false, m0 = 0): LanePace {
+  const before = paceOf(lane, rho, m0);
   const idx = currentIndex(lane);
   const t = lane.tasks[idx];
-  return { before, ahead: idx < 0 || t.extend ? before : censor(before, t, rho, (nowMs - currentStartMs(lane, idx)) / 1000) };
+  return { before, ahead: idx < 0 || t.extend || queuing ? before : censor(before, t, rho, (nowMs - currentStartMs(lane, idx)) / 1000) };
 }
 
 /** Every lane, sharing the household's pace when it has one (kappa > 0); otherwise each on its own, exactly. */
-export function departurePaces(dep: Pick<Departure, 'lanes' | 'rho' | 'kappa'>, nowMs: number): LanePace[] {
-  if (!(dep.kappa! > 0) || dep.lanes.length < 2) return dep.lanes.map((l) => lanePace(l, nowMs, dep.rho));
-  const running = dep.lanes.map((l) => {
-    const i = currentIndex(l);
-    return i < 0 || l.tasks[i].extend ? null : { d: l.tasks[i], elapsedSec: (nowMs - currentStartMs(l, i)) / 1000 };
+export function departurePaces(dep: Pick<Departure, 'lanes' | 'rho' | 'kappa' | 'paceMean'>, nowMs: number): LanePace[] {
+  const queue = queues(dep);
+  let paces: LanePace[];
+  if (!(dep.kappa! > 0) || dep.lanes.length < 2) paces = dep.lanes.map((l, i) => lanePace(l, nowMs, dep.rho, !!queue[i], dep.paceMean ?? 0));
+  else {
+    // Queuing is not evidence about anyone's pace: only steps really under way count as running.
+    const running = dep.lanes.map((l, li) => {
+      const i = currentIndex(l);
+      return i < 0 || l.tasks[i].extend || queue[li] ? null : { d: l.tasks[i], elapsedSec: (nowMs - currentStartMs(l, i)) / 1000 };
+    });
+    const { before, ahead } = householdPace(dep.lanes.map(readings), running, dep.rho, dep.kappa!, dep.paceMean ?? 0);
+    paces = before.map((b, i) => ({ before: b, ahead: ahead[i] }));
+  }
+  // The wait for a shared space: what the person inside still needs, then each whole step queued ahead.
+  // Those are steps already in progress, which a re-plan never touches, so the re-planner stays exact.
+  queue.forEach((ahead, li) => {
+    if (!ahead) return;
+    let mean = 0;
+    let variance = 0;
+    ahead.forEach((a, k) => {
+      const l = dep.lanes[a];
+      const i = currentIndex(l);
+      const m = k === 0 ? currentRemaining(l, i, nowMs, dep.rho, paces[a].before) : stepMoments(l.tasks[i], paces[a].before, dep.rho);
+      mean += m.mean;
+      variance += m.variance;
+    });
+    paces[li] = { ...paces[li], wait: { space: dep.lanes[li].tasks[currentIndex(dep.lanes[li])].uses!, moments: { mean, variance } } };
   });
-  const { before, ahead } = householdPace(dep.lanes.map(readings), running, dep.rho, dep.kappa!);
-  return before.map((b, i) => ({ before: b, ahead: ahead[i] }));
+  anticipate(dep, nowMs, paces, queue);
+  return paces;
+}
+
+/**
+ * Steps that will need a shared space later. Whoever is inside and queuing now goes first; then, first come first
+ * served by expected arrival, each later user waits W = max(0, F - A) for the space to be free at F, having
+ * arrived at A. With F and A taken as independent normals, W's mean and variance are Clark's closed forms, and
+ * its covariance with the arrival is -Var(A) P(W > 0) (Stein's lemma), which keeps the lane's spread right:
+ * a late arrival waits less. The space is then free at A + W + R, R the step's own length. One upcoming
+ * step per person per space. O(P t) per space.
+ */
+function anticipate(dep: Pick<Departure, 'lanes' | 'rho'>, nowMs: number, paces: LanePace[], queue: (number[] | null)[]): void {
+  const spaces = new Set(dep.lanes.flatMap((l) => l.tasks.flatMap((t) => (t.state === 'todo' && t.uses ? [t.uses] : []))));
+  for (const space of spaces) {
+    // Free when everyone inside or queuing now is done.
+    let free: Moments | null = null;
+    const line = dep.lanes.flatMap((l, li) => (l.tasks[currentIndex(l)]?.uses === space ? [li] : [])).sort((a, b) => (queue[a]?.length ?? 0) - (queue[b]?.length ?? 0));
+    for (const li of line) {
+      const l = dep.lanes[li];
+      const i = currentIndex(l);
+      const m = queue[li] ? { mean: paces[li].wait!.moments.mean + stepMoments(l.tasks[i], paces[li].before, dep.rho).mean, variance: paces[li].wait!.moments.variance + stepMoments(l.tasks[i], paces[li].before, dep.rho).variance } : currentRemaining(l, i, nowMs, dep.rho, paces[li].before);
+      free = m;
+    }
+    // Later users, in order of when they are expected to get there.
+    const later = dep.lanes.flatMap((l, li) => {
+      const i = currentIndex(l);
+      if (i < 0 || l.tasks[i].uses === space) return [];
+      const at = l.tasks.findIndex((t, k) => k > i && t.state === 'todo' && t.uses === space);
+      if (at < 0) return [];
+      const acc = lanePart({ ...l, tasks: l.tasks.slice(0, at) }, nowMs, dep.rho, paces[li]).acc;
+      return [{ li, at, arrive: total(acc, dep.rho * paces[li].ahead.v), own: stepMoments(l.tasks[at], paces[li].ahead, dep.rho) }];
+    });
+    later.sort((a, b) => a.arrive.mean - b.arrive.mean);
+    for (const u of later) {
+      let w: Moments = { mean: 0, variance: 0 };
+      if (free) {
+        const mu = free.mean - u.arrive.mean;
+        const sd = Math.sqrt(free.variance + u.arrive.variance) || 1e-9;
+        const a = mu / sd;
+        const pdf = Math.exp(-a * a / 2) / Math.sqrt(2 * Math.PI);
+        const p = phi(a);
+        const ew = mu * p + sd * pdf;
+        const ew2 = (mu * mu + sd * sd) * p + mu * sd * pdf;
+        // The wait's own variance, plus twice its covariance with the arrival already in the lane's sum.
+        w = { mean: ew, variance: Math.max(0, ew2 - ew * ew) - 2 * u.arrive.variance * p };
+      }
+      paces[u.li] = { ...paces[u.li], later: [...(paces[u.li].later ?? []), { at: u.at, moments: w }] };
+      free = { mean: u.arrive.mean + w.mean + u.own.mean, variance: Math.max(0, u.arrive.variance + w.variance + u.own.variance) };
+    }
+  }
 }
 
 /**
@@ -196,13 +301,20 @@ export function lanePart(lane: Lane, nowMs: number, rho: number, lp = lanePace(l
   const acc = new Float64Array(PARTS);
   const { before, ahead: pace } = lp;
   const idx = currentIndex(lane);
-  if (idx >= 0) {
+  if (idx >= 0 && lp.wait) {
+    // Queuing: first the wait, then the whole step, not yet begun.
+    addPart(acc, lp.wait.moments, 0);
+    addPart(acc, stepMoments(lane.tasks[idx], before, rho), lane.tasks[idx].sigma);
+  } else if (idx >= 0) {
     const cur = currentRemaining(lane, idx, nowMs, rho, before); // exact as it is: X | X > elapsed under the readings
     addPart(acc, cur, loading(lane, idx, nowMs, rho, pace, cur.mean));
+  }
+  if (idx >= 0) {
     for (let i = idx + 1; i < lane.tasks.length; i++) {
       const t = lane.tasks[i];
       if (t.state === 'todo') addPart(acc, stepMoments(t, pace, rho), t.sigma);
     }
+    for (const w of lp.later ?? []) if (w.at < lane.tasks.length) addPart(acc, w.moments, 0);
   }
   return { acc, c: rho * pace.v, pace };
 }
@@ -245,13 +357,16 @@ export interface LaneView {
    * said when it ran over. Fixed while the step runs, so a countdown to it ticks down ("3 min left").
    */
   stepEndMs: number;
+  /** Queuing for this shared space instead of doing the step. */
+  waitingFor?: string;
 }
 
 /** Where a person stands at `nowMs`. O(t). */
 export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: number, lp = lanePace(lane, nowMs, rho)): LaneView {
   const idx = currentIndex(lane);
   const { acc, c, pace: p } = lanePart(lane, nowMs, rho, lp);
-  const pace = p.n ? paceFactor(p, rho, lane.tasks.reduce((a, t) => a + t.sigma, 0) / lane.tasks.length) : 0;
+  // Today's pace, once there is something to go on: a finished step, or what this weekday usually brings.
+  const pace = p.n || p.z ? paceFactor(p, rho, lane.tasks.reduce((a, t) => a + t.sigma, 0) / lane.tasks.length) : 0;
   if (idx < 0) {
     const last = lane.tasks.findLast((t) => t.state === 'done');
     const readyMs = last?.doneAtMs ?? lane.startedAtMs;
@@ -277,7 +392,8 @@ export function projectLane(lane: Lane, gateMs: number, nowMs: number, rho: numb
     status,
     slackSec: Math.round((gateMs - readyMs) / 1000),
     pace,
-    stepEndMs: stepEnd(lane, idx, rho, lp.before),
+    stepEndMs: lp.wait ? nowMs + (lp.wait.moments.mean + Math.exp(adjust(lane.tasks[idx], lp.before, rho).mu)) * 1000 : stepEnd(lane, idx, rho, lp.before),
+    ...(lp.wait ? { waitingFor: lp.wait.space } : {}),
   };
 }
 
@@ -343,10 +459,23 @@ export function markDone(dep: Departure, personId: string, nowMs: number): { dep
   const startMs = currentStartMs(lane, idx);
   const tasks = lane.tasks.with(idx, { ...task, state: 'done', doneAtMs: nowMs });
   const fair = task.forPerson === personId && !task.quick;
+  const done = bump(dep, dep.lanes.with(li, { ...lane, tasks }));
   return {
-    dep: bump(dep, dep.lanes.with(li, { ...lane, tasks })),
+    dep: task.uses ? admit(done, task.uses, nowMs) : done,
     sample: fair ? { personId, stepId: task.stepId, ...capped(task, Math.round((nowMs - startMs) / 1000), !!task.extend) } : null,
   };
+}
+
+/** A shared space was just freed: the next in its queue goes in now, and their step's clock starts now. */
+function admit(dep: Departure, space: string, nowMs: number): Departure {
+  const q = queues(dep);
+  const li = dep.lanes.findIndex((l, i) => !q[i] && l.tasks[currentIndex(l)]?.uses === space);
+  if (li < 0) return dep;
+  const lane = dep.lanes[li];
+  const k = currentIndex(lane);
+  const t = lane.tasks[k];
+  if (t.inAtMs !== undefined) return dep;
+  return { ...dep, lanes: dep.lanes.with(li, { ...lane, tasks: lane.tasks.with(k, { ...t, inAtMs: nowMs, notBeforeMs: Math.max(t.notBeforeMs ?? nowMs, nowMs) }) }) };
 }
 
 /** "I'm ready": everything the person had left is done now. Untimed, so nothing is learned from it. */
@@ -354,8 +483,10 @@ export function markReady(dep: Departure, personId: string, nowMs: number): Depa
   const li = laneOf(dep, personId);
   if (li < 0 || currentIndex(dep.lanes[li]) < 0) return null;
   const lane = dep.lanes[li];
+  const space = lane.tasks[currentIndex(lane)].uses;
   const tasks = lane.tasks.map((t) => (t.state === 'todo' ? { ...t, state: 'done' as const, doneAtMs: nowMs, untimed: true } : t));
-  return bump(dep, dep.lanes.with(li, { ...lane, tasks }));
+  const done = bump(dep, dep.lanes.with(li, { ...lane, tasks }));
+  return space ? admit(done, space, nowMs) : done;
 }
 
 /** The current step is running over: about `extraSec` more from now. */
@@ -414,6 +545,8 @@ export interface Block {
   quick?: boolean;
   /** The step in progress has run past what was planned for it. */
   overrun?: boolean;
+  /** Queuing for this shared space: the block starts when it is expected to be free. */
+  waitingFor?: string;
 }
 
 /**
@@ -433,6 +566,11 @@ export function laneTimeline(lane: Lane, gateMs: number, nowMs: number, rho: num
       const startMs = Math.max(cursor, t.notBeforeMs ?? cursor);
       out.push({ ...base, startMs, endMs: Math.max(startMs, t.doneAtMs!), state: 'done' });
       cursor = Math.max(cursor, t.doneAtMs!);
+    } else if (t.state === 'todo' && i === idx && lp.wait) {
+      const startMs = nowMs + lp.wait.moments.mean * 1000;
+      const endMs = startMs + stepMoments(t, before, rho).mean * 1000;
+      out.push({ ...base, startMs, endMs, state: 'current', waitingFor: lp.wait.space });
+      cursor = endMs;
     } else if (t.state === 'todo' && i === idx) {
       const startMs = currentStartMs(lane, idx);
       const endMs = Math.max(startMs, nowMs) + currentRemaining(lane, idx, nowMs, rho, before).mean * 1000;
@@ -440,6 +578,7 @@ export function laneTimeline(lane: Lane, gateMs: number, nowMs: number, rho: num
       out.push({ ...base, startMs, endMs, state: 'current', overrun: !!t.extend || nowMs > planned });
       cursor = endMs;
     } else if (t.state === 'todo') {
+      cursor += (lp.later?.find((w) => w.at === i)?.moments.mean ?? 0) * 1000; // waiting for a shared space first
       const ms = stepMoments(t, pace, rho).mean * 1000;
       out.push({ ...base, startMs: cursor, endMs: cursor + ms, state: 'todo' });
       cursor += ms;

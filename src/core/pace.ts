@@ -64,12 +64,13 @@ export function readings(lane: Lane): number[] {
 }
 
 /** Posterior of today's pace Z for this lane. Readings r_k ~ N(sqrt(rho) Z, 1 - rho). O(t). */
-export function paceOf(lane: Lane, rho: number): Pace {
+export function paceOf(lane: Lane, rho: number, m0 = 0): Pace {
   const r = readings(lane);
-  if (rho <= 0 || !r.length) return { z: 0, v: 1, n: r.length };
+  if (rho <= 0) return { z: 0, v: 1, n: r.length };
+  // Prior N(m0, 1): m0 is what this weekday usually brings (weekdayMean), 0 until a household shows one.
   const precision = 1 + (r.length * rho) / (1 - rho);
   const s = r.reduce((a, b) => a + b, 0);
-  return { z: (Math.sqrt(rho) * s) / (1 - rho) / precision, v: 1 / precision, n: r.length };
+  return { z: (m0 + (Math.sqrt(rho) * s) / (1 - rho)) / precision, v: 1 / precision, n: r.length };
 }
 
 /**
@@ -142,13 +143,39 @@ export interface PaceStats {
   /** The same for pairs of readings from different people in one morning (the household's shared pace). */
   crossProducts?: number;
   crossPairs?: number;
+  /** Per weekday (0 Sunday to 6 Saturday): the sum and count of readings, for "Mondays run slow". */
+  weekday?: [sum: number, n: number][];
+}
+
+/** A weekday's readings count as this many of none before its mean is trusted. */
+const PRIOR_DAY = 15;
+/** Readings kept per weekday before older ones count half. */
+const DAY_KEPT = 300;
+
+/**
+ * What a weekday usually brings to anyone's pace, as a prior mean for Z: readings average sqrt(rho) Z, so the
+ * shrunk mean reading over sqrt(rho). 0 until the household's own mornings show a difference. O(1).
+ */
+export function weekdayMean(s: PaceStats, rho: number, day: number): number {
+  const [sum, n] = s.weekday?.[day] ?? [0, 0];
+  return rho <= 0 ? 0 : Math.max(-1.5, Math.min(1.5, sum / (PRIOR_DAY + n) / Math.sqrt(rho)));
 }
 
 /** The household's rho: the pairs' mean product, shrunk towards RHO_PRIOR, kept in [0, RHO_MAX]. */
 export const rhoOf = (s: PaceStats) => Math.max(0, Math.min(RHO_MAX, (PRIOR_PAIRS * RHO_PRIOR + s.products) / (PRIOR_PAIRS + s.pairs)));
 
 /** A new reading `r`, paired with the same person's earlier readings this morning. O(n). */
-export function recordPace(s: PaceStats, earlier: readonly number[], r: number, others: readonly number[] = []): void {
+export function recordPace(s: PaceStats, earlier: readonly number[], r: number, others: readonly number[] = [], day?: number): void {
+  if (day !== undefined) {
+    s.weekday ??= Array.from({ length: 7 }, () => [0, 0] as [number, number]);
+    const d = s.weekday[day];
+    d[0] += r;
+    d[1]++;
+    if (d[1] > DAY_KEPT) {
+      d[0] /= 2;
+      d[1] /= 2;
+    }
+  }
   for (const e of earlier) {
     s.products += e * r;
     s.pairs++;
@@ -229,7 +256,7 @@ function censorJoint(mu: number[], S: number[][], p: number, run: Running, rho: 
  * Today's pace for everyone at once. `before[p]` leaves out p's own running step (it is what that step is
  * conditioned on, before its elapsed time is applied to it), `ahead[p]` has everything (for the steps after it).
  */
-export function householdPace(readingsBy: readonly (readonly number[])[], running: readonly (Running | null)[], rho: number, kappa: number): { before: Pace[]; ahead: Pace[] } {
+export function householdPace(readingsBy: readonly (readonly number[])[], running: readonly (Running | null)[], rho: number, kappa: number, m0 = 0): { before: Pace[]; ahead: Pace[] } {
   const P = readingsBy.length;
   const ns = readingsBy.map((r) => r.length);
   if (rho <= 0) {
@@ -241,7 +268,9 @@ export function householdPace(readingsBy: readonly (readonly number[])[], runnin
   const off = -k / (1 - k + k * P) / (1 - k);
   const lam = ns.map((n, i) => ns.map((_, j) => (i === j ? 1 / (1 - k) + off + (n * rho) / (1 - rho) : off)));
   const S0 = inverse(lam);
-  const h = readingsBy.map((r) => (Math.sqrt(rho) * r.reduce((a, x) => a + x, 0)) / (1 - rho));
+  // The prior's own pull towards the weekday's mean m0: Lambda0 times m0 for every person (the prior precision's row sums).
+  const pull = m0 * (1 / (1 - k) + off * P);
+  const h = readingsBy.map((r) => pull + (Math.sqrt(rho) * r.reduce((a, x) => a + x, 0)) / (1 - rho));
   const mu0 = S0.map((row) => row.reduce((a, x, j) => a + x * h[j], 0));
   const run = (skip: number) => {
     const mu = [...mu0];

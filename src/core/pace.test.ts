@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { markDone, project, startDeparture, type Household } from './departure.ts';
 import { draw, rng } from './fixtures.ts';
-import { addPart, censor, householdPace, kappaOf, paceOf, PARTS, readings, recordPace, rhoOf, total, type PaceStats } from './pace.ts';
+import { addPart, censor, householdPace, kappaOf, paceOf, PARTS, readings, recordPace, rhoOf, total, weekdayMean, type PaceStats } from './pace.ts';
 import { moments, phi, posterior } from './stats.ts';
 
 const MIN = 60_000;
@@ -265,4 +265,37 @@ test('when slow mornings are shared, knowing it gives better chances (12k simula
   console.log(msg);
   assert.ok(shared.brier < alone.brier, msg);
   assert.ok(Math.abs(shared.said - shared.hit) / shared.n < 0.01, msg);
+});
+
+// ---------- weekdays ----------
+
+test('a weekday that runs slow is learned, and starts that morning from its usual pace', () => {
+  const r = rng(29);
+  const rho = 0.4;
+  const s: PaceStats = { products: 0, pairs: 0 };
+  // About 150 mornings of each weekday; each morning's own pace varies by a whole unit, so it takes that many.
+  for (let k = 0; k < 1050; k++) {
+    const day = k % 7;
+    const z = (day === 1 ? 0.8 : 0) + normal(r); // Mondays: everyone's pace 0.8 slower
+    for (let i = 0; i < 5; i++) recordPace(s, [], Math.sqrt(rho) * z + Math.sqrt(1 - rho) * normal(r), [], day);
+  }
+  assert.ok(Math.abs(weekdayMean(s, rho, 1) - 0.8) < 0.3, `Monday ${weekdayMean(s, rho, 1)}`);
+  assert.ok(Math.abs(weekdayMean(s, rho, 3)) < 0.3, `Wednesday ${weekdayMean(s, rho, 3)}`);
+  assert.equal(weekdayMean({ products: 0, pairs: 0 }, rho, 1), 0, 'no mornings yet: no weekday assumed');
+  // The prior moves today's pace before anything is done, and readings then update it exactly.
+  const lane = startDeparture(solo, new Map(), 'run', T0 + 60 * MIN, T0, rho).lanes[0];
+  assert.deepEqual(paceOf(lane, rho, 0.8), { z: 0.8, v: 1, n: 0 });
+  const hp = householdPace([[0.5, 1.1]], [null], rho, 0, 0.8);
+  const prec = 1 + (2 * rho) / (1 - rho);
+  assert.ok(Math.abs(hp.ahead[0].z - (0.8 + (Math.sqrt(rho) * 1.6) / (1 - rho)) / prec) < 1e-12, 'household form agrees with the conjugate update');
+  const two = householdPace([[0.5], [1.1]], [null, null], rho, 0.5, 0.8);
+  let w = 0;
+  let m = 0;
+  for (let x = -6; x <= 7; x += 0.01)
+    for (let y = -6; y <= 7; y += 0.01) {
+      const f = Math.exp(-((x - 0.8) ** 2 - 2 * 0.5 * (x - 0.8) * (y - 0.8) + (y - 0.8) ** 2) / (2 * 0.75) - ((0.5 - Math.sqrt(rho) * x) ** 2 + (1.1 - Math.sqrt(rho) * y) ** 2) / (2 * (1 - rho)));
+      w += f;
+      m += f * x;
+    }
+  assert.ok(Math.abs(two.ahead[0].z - m / w) < 2e-3, `with kappa and a weekday prior: ${two.ahead[0].z} vs ${m / w}`);
 });
