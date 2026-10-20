@@ -139,7 +139,7 @@ Resources:
   DailySnapshots:
     Type: AWS::DLM::LifecyclePolicy
     Properties:
-      Description: Doorbound households, one snapshot a day, a week kept
+      Description: Doorbound households - one snapshot a day - a week kept
       State: ENABLED
       ExecutionRoleArn: { 'Fn::GetAtt': [SnapshotRole, Arn] }
       PolicyDetails:
