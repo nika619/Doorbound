@@ -1,6 +1,6 @@
 # Doorbound privacy policy
 
-Doorbound is self-hosted: each household runs its own server, and that server is the only place its data lives. Nobody else, including the people who wrote Doorbound, receives any of it.
+Doorbound keeps a household's data on the Doorbound server it is linked to, and nowhere else: a family's own server, or one serving many households, each in its own folder that no other household's sign-in can reach. Nobody outside that server receives any of it.
 
 **What it keeps:** the first names you give it, each person's morning steps and how long they said each takes, how long those steps really took (the last nine mornings per step), the current departure, and a record of the chances it gave and whether people made it. It also keeps a short audit log of which tool was used and when, without what was said and without names: people and devices appear only as one-way hashes. All of this sits in one file per household on the server.
 
