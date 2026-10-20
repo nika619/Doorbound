@@ -80,6 +80,7 @@ The person linking sees one page: **start a new household**, or **join one with 
 | short description (123 max) | A departure board for the household morning: real chances of leaving on time, and gentle re-plans when someone runs late. |
 | example phrases | "Start the school run, we leave at 7:40." · "Isha's still in the shower, five more minutes." · "How are we doing?" · "We leave at 7:40 tomorrow. When should everyone be up?" |
 | privacy policy | https://github.com/nika619/Doorbound/blob/main/PRIVACY.md |
+| directed to children | No: parents and carers run their household's morning (PRIVACY.md, Children) |
 | terms of use | https://github.com/nika619/Doorbound/blob/main/TERMS.md |
 | icons (light) | `https://raw.githubusercontent.com/nika619/Doorbound/main/alexa/icon-SIZE.png` for SIZE 64, 72, 88, 126, 180, 241 |
 | carousel image (600x900) | https://raw.githubusercontent.com/nika619/Doorbound/main/alexa/carousel.png |

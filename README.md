@@ -130,6 +130,7 @@ Without Docker, `npm start` behind any HTTPS proxy or tunnel, with these set:
 | `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | How Alexa+ signs in (secret 32+ characters): it trades them at `/oauth/token` for a one-hour token. Rotating the secret revokes every token. |
 | `PUBLIC_URL` | The https origin Alexa+ calls, for example `https://doorbound.example.com`; tokens are bound to its `/mcp`. |
 | `OAUTH_REDIRECT_URIS` | Turns on account linking: one server, many households. The redirect URLs Alexa+ gives (exact match). Without it, the server is one household's. |
+| `HOUSEHOLD_RETENTION_DAYS` | A linked household nobody has changed for this many days is deleted (default 180, from 30 to 3650). |
 | `ALLOWED_HOSTS` | Host names clients will use (DNS-rebinding protection). |
 | `ALLOWED_ORIGINS` | Origins allowed to call `/mcp` from a browser, if any. |
 | `SCREEN_KEY` | Key a TV presents to read the board: open `https://your-host/board#k=SCREEN_KEY` (the fragment never reaches a server log). |
