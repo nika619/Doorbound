@@ -24,7 +24,7 @@ export const stepSchema = z.object({
   helpers: z.array(id).max(LIMITS.helpers).optional(),
 });
 export const householdSchema = z.object({
-  people: z.array(z.object({ id, name, steps: z.array(stepSchema).max(LIMITS.steps) })).max(LIMITS.people),
+  people: z.array(z.object({ id, name, steps: z.array(stepSchema).max(LIMITS.steps), wakeSec: z.number().int().min(60).max(3600).optional() })).max(LIMITS.people),
 });
 
 const ms = z.number().int().nonnegative();
