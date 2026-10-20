@@ -72,3 +72,11 @@ jobs:
       - name: Container logs
         if: failure()
         run: docker logs doorbound
+
+  aws-template:
+    name: AWS deployment template passes cfn-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: pip install "cfn-lint>=1,<2"
+      - run: cfn-lint deploy/aws/doorbound.yaml
