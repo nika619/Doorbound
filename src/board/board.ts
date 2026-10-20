@@ -524,11 +524,14 @@ function second(animate = false) {
       const then = v.next?.name ?? (v.current ? 'out of the door' : '');
       // Today's pace, once it is clear (15% or more), in 5% steps so it does not flicker.
       const pc = v.current && Math.abs(v.pace) >= 0.15 ? Math.round(v.pace * 20) * 5 : 0;
-      const key = `${then}|${pc}`;
+      // What to do now, in minutes: a countdown to the step's target end, then how far over it is.
+      const left = v.current ? leftOn(v, t) : null;
+      const key = `${then}|${pc}|${left?.text}`;
       if (r.then.dataset.key !== key) {
         r.then.dataset.key = key;
         const tag = pc ? [el('i', `pace ${pc > 0 ? 'slow' : 'fast'}`, undefined, pc > 0 ? `SLOW TODAY +${pc}%` : `AHEAD ${pc}%`)] : [];
-        r.then.replaceChildren(...(then ? [el('b', '', undefined, 'THEN'), then] : []), ...tag);
+        const clock = left ? [el('i', `left${left.over ? ' over' : ''}`, undefined, left.text.toUpperCase())] : [];
+        r.then.replaceChildren(...clock, ...(then ? [el('b', '', undefined, 'THEN'), then] : []), ...tag);
       }
       r.status.set(status, tone);
       r.chance.set(v.status === 'ready' ? '' : pct(v.pOnTime), chanceTone, 'right');
@@ -539,7 +542,7 @@ function second(animate = false) {
       setText(r.ready, hhmm(v.readyMs));
       if (r.ready.dataset.tone !== chanceTone) r.ready.dataset.tone = chanceTone;
       r.done.disabled = !v.current;
-      const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}${pc > 0 ? `, running ${pc}% slow today` : pc < 0 ? `, ${-pc}% ahead today` : ''}` : ''}.`;
+      const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}${left ? `, ${left.text} on ${v.current.name}` : ''}${pc > 0 ? `, running ${pc}% slow today` : pc < 0 ? `, ${-pc}% ahead today` : ''}` : ''}.`;
       setText(r.sr, sentence);
       if (tone === 'late') late.push(sentence);
     }
@@ -699,9 +702,17 @@ function cardView() {
   for (const [li, lane] of dep.lanes.entries()) {
     const v = projectLane(lane, dep.gateMs, t, dep.rho, paces[li]);
     const [status, tone] = statusOf(v, dep, t);
-    const c = el('span', 'chip', chips, `${nameOf(lane.personId).toUpperCase()} · ${v.current ? pct(v.pOnTime) : status}`);
+    const c = el('span', 'chip', chips, `${nameOf(lane.personId).toUpperCase()} · ${v.current ? `${v.current.name.toUpperCase()} · ${leftOn(v, t).text.toUpperCase()}` : status}`);
     c.dataset.tone = tone === 'board' ? 'ok' : tone;
   }
+}
+
+/** "4 min left", "about now" or "2 min over": the step in progress against its target end. */
+function leftOn(v: LaneView, t: number): { text: string; over: boolean } {
+  const ms = v.stepEndMs - t;
+  if (ms > 30_000) return { text: `${Math.ceil(ms / 60_000)} min left`, over: false };
+  if (ms > -60_000) return { text: 'about now', over: false };
+  return { text: `${Math.floor(-ms / 60_000)} min over`, over: true };
 }
 
 // ---------- layout ----------
