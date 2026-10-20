@@ -79,4 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: pip install "cfn-lint>=1,<2"
-      - run: cfn-lint deploy/aws/doorbound.yaml
+      - name: cfn-lint (findings shown as annotations)
+        run: |
+          set -o pipefail
+          cfn-lint deploy/aws/doorbound.yaml --format parseable | sed 's/^/::error::/'
