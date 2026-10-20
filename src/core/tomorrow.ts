@@ -15,10 +15,10 @@
 // the person says it (10 minutes if they do not), with the same uncertainty as any stated step, so the
 // times given are alarm times and the 85% already allows for a slow start.
 
-import { lanePart, startDeparture, TARGET, type Household } from './departure.ts';
+import { durationOf, lanePart, startDeparture, TARGET, type Household } from './departure.ts';
 import type { History } from './learn.ts';
 import { total } from './pace.ts';
-import { cdf, posterior, sum, type LogNormal } from './stats.ts';
+import { cdf, moments, posterior, sum, type LogNormal } from './stats.ts';
 
 /** From the alarm to the first step, when nobody has said: 10 minutes. */
 export const WAKE_SEC = 600;
@@ -69,9 +69,9 @@ export function wholeMornings(household: Household, history: History, rho: numbe
 }
 
 /** The latest starts giving the household `target` chance together, with the most total sleep. O(P log^2). */
-export function planStarts(household: Household, history: History, gateMs: number, rho: number, target = TARGET): { starts: Start[]; pAll: number } {
+export function planStarts(household: Household, history: History, gateMs: number, rho: number, target = TARGET): { starts: Start[]; pAll: number; order: { space: string; people: string[] }[] } {
   const people = wholeMornings(household, history, rho);
-  if (!people.length) return { starts: [], pAll: 1 };
+  if (!people.length) return { starts: [], pAll: 1, order: [] };
   const logAll = (lambda: number) => people.reduce((a, p) => a + Math.log(cdf(p.d, tAt(p.d, lambda))), 0);
   // ln of the product falls as lambda rises: find where it meets ln target.
   let lo = 1e-9;
@@ -86,5 +86,43 @@ export function planStarts(household: Household, history: History, gateMs: numbe
     const t = tAt(d, lo);
     return { personId, startMs: gateMs - t * 1000, pOnTime: cdf(d, t) };
   });
-  return { starts, pAll: starts.reduce((a, s) => a * s.pOnTime, 1) };
+  const order = stagger(household, history, starts);
+  // Anyone moved earlier for a shared space has more time, so a better chance: recomputed, never worse.
+  for (const s of starts) s.pOnTime = cdf(people.find((p) => p.personId === s.personId)!.d, (gateMs - s.startMs) / 1000);
+  return { starts, pAll: starts.reduce((a, s) => a * s.pOnTime, 1), order };
+}
+
+/**
+ * Shared spaces: alarms that would put two people in the bathroom at once (expected times) are moved so the
+ * earlier user is out before the next arrives: the earlier one gets up sooner by the overlap. Returns who has
+ * each space in what order. shortcut: uses expected times, not the full spread; a household that often
+ * collides anyway learns longer steps from the mornings themselves.
+ */
+function stagger(household: Household, history: History, starts: Start[]): { space: string; people: string[] }[] {
+  const out: { space: string; people: string[] }[] = [];
+  const spaces = new Set(household.people.flatMap((p) => p.steps.flatMap((s) => (s.uses ? [s.uses] : []))));
+  for (const space of spaces) {
+    const users = starts.flatMap((s) => {
+      const p = household.people.find((x) => x.id === s.personId)!;
+      const k = p.steps.findIndex((x) => x.uses === space && !x.canWait && !x.optional);
+      if (k < 0) return [];
+      const mean = (id: string, sec: number) => moments(durationOf(history, p.id, id, sec)).mean * 1000;
+      const arrive = moments(posterior(p.wakeSec ?? WAKE_SEC)).mean * 1000 + p.steps.slice(0, k).filter((x) => !x.canWait && !x.optional).reduce((a, x) => a + mean(x.id, x.statedSec), 0);
+      return [{ s, arrive, use: mean(p.steps[k].id, p.steps[k].statedSec) }];
+    });
+    for (let pass = 0; pass < users.length; pass++) {
+      users.sort((a, b) => a.s.startMs + a.arrive - (b.s.startMs + b.arrive));
+      let moved = false;
+      for (let i = 1; i < users.length; i++) {
+        const overlap = users[i - 1].s.startMs + users[i - 1].arrive + users[i - 1].use - (users[i].s.startMs + users[i].arrive);
+        if (overlap > 0) {
+          users[i - 1].s.startMs -= overlap;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    if (users.length > 1) out.push({ space, people: users.map((u) => u.s.personId) });
+  }
+  return out;
 }

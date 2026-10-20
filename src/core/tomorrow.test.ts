@@ -47,6 +47,21 @@ test('the times are alarms: getting up is planned as a step of its own, as long 
   assert.ok(Math.exp(d.mu) > 10 * 60, 'the whole morning includes getting up');
 });
 
+test('one bathroom: alarms are staggered so nobody is due in it while someone else is', () => {
+  const both: Household = {
+    people: [
+      { id: 'a', name: 'A', steps: [{ id: 'sh', name: 'Shower', statedSec: 600, uses: 'bathroom' }, { id: 'dr', name: 'Dress', statedSec: 300 }] },
+      { id: 'b', name: 'B', steps: [{ id: 'sh', name: 'Shower', statedSec: 600, uses: 'bathroom' }, { id: 'dr', name: 'Dress', statedSec: 300 }] },
+    ],
+  };
+  const { starts, pAll, order } = planStarts(both, new Map(), GATE, 0.3);
+  assert.deepEqual(order.map((o) => o.space), ['bathroom']);
+  const first = starts.find((s) => s.personId === order[0].people[0])!;
+  const second = starts.find((s) => s.personId === order[0].people[1])!;
+  assert.ok(second.startMs - first.startMs >= 9 * 60_000, 'the first is up early enough to be out of the shower before the second needs it');
+  assert.ok(pAll >= 0.85, 'moving someone earlier only helps');
+});
+
 test('steps that can wait or be skipped never get anyone up earlier', () => {
   const dad = household.people[2];
   const [{ d: all }] = wholeMornings({ people: [{ ...dad, steps: dad.steps.map((s) => ({ ...s, canWait: false })) }] }, new Map(), 0.3);
