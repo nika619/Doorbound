@@ -238,6 +238,13 @@ export function issueToken(c: OAuthConfig, form: URLSearchParams, authorization:
   return error(400, 'unsupported_grant_type', linking(c) ? 'Use client_credentials, authorization_code or refresh_token.' : 'Only client_credentials is supported.');
 }
 
+/** A household's private door-hook key ("we've left" from a door sensor), signed like its TV key but never interchangeable with it. */
+export const hookKey = (c: OAuthConfig, household: string) => `k.${household}.${createHmac('sha256', keyOf(c)).update(`hook.${household}`).digest('base64url')}`;
+export function hookHousehold(c: OAuthConfig, key: string): string | null {
+  const m = /^k\.([0-9a-f]{32})\./.exec(key);
+  return m && tokenMatches(key, hookKey(c, m[1])) ? m[1] : null;
+}
+
 /** A household's private TV link key: the household and a signature, so the server needs to store nothing. */
 export const screenKey = (c: OAuthConfig, household: string) => `h.${household}.${createHmac('sha256', keyOf(c)).update(`screen.${household}`).digest('base64url')}`;
 export function screenHousehold(c: OAuthConfig, key: string): string | null {

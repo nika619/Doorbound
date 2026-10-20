@@ -12,9 +12,9 @@ import { household as demoHousehold, learnedHistory } from '../core/fixtures.ts'
 import { Audit } from './audit.ts';
 import { baseHeaders, bearer, BodyTooLarge, clientOf, isLoopback, pageCsp, RateLimiter, readBody, tokenMatches, type PageHashes } from './guard.ts';
 import { consentPage, keyPage, linkHeaders, page } from './linkpage.ts';
-import { accessOf, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
+import { accessOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
 import { Store } from './store.ts';
-import { boardOf, buildServer, type Ctx } from './tools.ts';
+import { boardOf, buildServer, endDeparture, type Ctx } from './tools.ts';
 
 // From source (src/server/) the project is two levels up; the bundle (dist/server.mjs) sits beside the manifest.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -94,9 +94,10 @@ const publicBase = OAUTH?.publicUrl ?? `http://localhost:${PORT}`;
 /** Everything a request's tools see: its household's store, and that household's TV link if there is one. */
 function ctxFor(s: Store, client: string, household: string | null): Ctx {
   const screenLink = household && OAUTH ? `${publicBase}/board#k=${screenKey(OAUTH, household)}` : SCREEN_KEY ? `${publicBase}/board#k=${SCREEN_KEY}` : undefined;
+  const doorLink = household && OAUTH ? `${publicBase}/hooks/left?k=${hookKey(OAUTH, household)}` : undefined;
   // On a shared server, every audit line says which household it was (its fingerprint, never its key).
   const log = household ? { record: (e: Parameters<Audit['record']>[0]) => audit.record({ ...e, household }) } : audit;
-  return { store: s, audit: log, client, boardHtml: () => pages.board.html, now, clockRate: DEMO_SPEED, screenLink };
+  return { store: s, audit: log, client, boardHtml: () => pages.board.html, now, clockRate: DEMO_SPEED, screenLink, doorLink };
 }
 const requestCtx = new AsyncLocalStorage<Ctx>();
 
@@ -231,6 +232,25 @@ async function authorizeRoute(req: IncomingMessage, res: ServerResponse, url: UR
   res.writeHead(302, { Location: redirectWith(r.redirectUri, { code: issueCode(o, r, id!, nowSec), state: r.state }), 'Cache-Control': 'no-store' }).end();
 }
 
+/**
+ * "We've left", from a door sensor, smart lock or home routine: a POST with the household's hook key (in the
+ * query, since most of those can only call a URL; or as a Bearer) or, for the server's own household, AUTH_TOKEN.
+ * Counted only from 15 minutes before leaving time, so taking the bins out at seven does not end the morning.
+ */
+async function hookRoute(req: IncomingMessage, res: ServerResponse, url: URL, client: string) {
+  if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
+  if (limited(res, limits.page, client)) return;
+  const presented = url.searchParams.get('k') ?? bearer(req);
+  const household = OAUTH && presented ? hookHousehold(OAUTH, presented) : null;
+  if (!household && !(AUTH_TOKEN && tokenMatches(presented ?? undefined, AUTH_TOKEN)) && (PUBLIC || AUTH_TOKEN || OAUTH)) return send(res, 401, 'Unauthorized.');
+  const s = household ? await householdStore(household) : store;
+  const dep = s.departure;
+  if (!dep) return json(res, 200, { left: false, reason: 'no departure running' });
+  if (now() < dep.gateMs - 15 * 60_000) return json(res, 202, { left: false, reason: 'too early: before 15 minutes to leaving time' });
+  const said = endDeparture(ctxFor(s, client, household), true, 'door_hook');
+  json(res, 200, { left: true, said });
+}
+
 async function tokenRoute(req: IncomingMessage, res: ServerResponse, url: URL, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
   if (limited(res, limits.token, client)) return;
@@ -275,6 +295,8 @@ const server = createServer(async (req, res) => {
       case '/.well-known/oauth-protected-resource':
       case '/.well-known/oauth-protected-resource/mcp':
         return OAUTH ? json(res, 200, protectedResourceMetadata(OAUTH)) : send(res, 404, 'Not found.');
+      case '/hooks/left':
+        return await hookRoute(req, res, url, client);
       case '/oauth/authorize':
         return OAUTH && linking(OAUTH) ? await authorizeRoute(req, res, url, client) : send(res, 404, 'Not found.');
       case '/oauth/token':
