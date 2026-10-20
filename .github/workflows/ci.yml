@@ -58,7 +58,8 @@ jobs:
           docker run -d --name doorbound -p 3939:3939 --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges:true --memory 256m \
             -e AUTH_TOKEN="$TOKEN" -e ALLOWED_HOSTS=localhost -e DEMO_SEED=1 \
-            -e OAUTH_CLIENT_ID=alexa-plus -e OAUTH_CLIENT_SECRET="$OAUTH" -e PUBLIC_URL=http://localhost:3939 doorbound
+            -e OAUTH_CLIENT_ID=alexa-plus -e OAUTH_CLIENT_SECRET="$OAUTH" -e PUBLIC_URL=http://localhost:3939 \
+            -e OAUTH_REDIRECT_URIS=https://alexa.example.com/link doorbound
           for i in $(seq 1 30); do curl -sf http://localhost:3939/healthz && break; sleep 1; done
       - name: End-to-end smoke test against the container
         run: npm run smoke
@@ -67,6 +68,7 @@ jobs:
           AUTH_TOKEN: ${{ env.TOKEN }}
           OAUTH_CLIENT_ID: alexa-plus
           OAUTH_CLIENT_SECRET: ${{ env.OAUTH }}
+          OAUTH_REDIRECT_URIS: https://alexa.example.com/link
       - name: Container logs
         if: failure()
         run: docker logs doorbound

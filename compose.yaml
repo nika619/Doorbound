@@ -12,6 +12,7 @@ services:
       SCREEN_KEY: ${SCREEN_KEY:-}
       OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-}
       OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
+      OAUTH_REDIRECT_URIS: ${OAUTH_REDIRECT_URIS:-}
       PUBLIC_URL: https://${DOMAIN}
       TRUST_PROXY: "1"
     volumes:
