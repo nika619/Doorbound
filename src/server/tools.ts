@@ -78,16 +78,28 @@ function board(ctx: Ctx): Board {
 
 // ---------- speech ----------
 
+/** A time as people say it: "7:49" in the morning, "1:30 pm" after noon, "12:15 am" just after midnight. */
 const clock = (ms: number) => {
   const d = new Date(ms);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const h = d.getHours();
+  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}${h === 0 ? ' am' : h >= 12 ? ' pm' : ''}`;
 };
 const minutes = (sec: number) => {
   const m = Math.max(1, Math.round(Math.abs(sec) / 60));
   return `${m} minute${m === 1 ? '' : 's'}`;
 };
-/** A chance as Alexa should say it: never a certain 0% or 100%. */
+/** A chance as a number, for when the question is about numbers (how accurate it has been). Never 0% or 100%. */
 const pct = (p: number) => `${Math.min(99, Math.max(1, Math.round(p * 100)))}%`;
+/**
+ * A chance as a person says it: a natural frequency ("about a 3 in 4 chance"), which people hear and weigh
+ * better than a percentage, and never certainty.
+ */
+function odds(p: number): string {
+  if (p >= 0.97) return 'and almost sure to make it';
+  if (p < 0.08) return 'and very unlikely to make it';
+  const [n, d] = p >= 0.85 ? [9, 10] : p >= 0.7 ? [3, 4] : p >= 0.6 ? [2, 3] : p >= 0.4 ? [1, 2] : p >= 0.28 ? [1, 3] : p >= 0.18 ? [1, 4] : [1, 10];
+  return n === 1 && d === 2 ? 'with about an even chance' : `with about a ${n} in ${d} chance`;
+}
 const list = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 
 function nameOf(store: Store, id: string) {
@@ -117,25 +129,31 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
       return `${lead} Even so, ${list(late)} will be about ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000)} would work.`;
     }
     const before = project(dep.reroute.before, now);
-    const helped = views.filter((_, i) => before[i].pOnTime < TARGET).map((v) => `${who(v)} is now at ${pct(v.pOnTime)}`);
+    const helped = views.filter((_, i) => before[i].pOnTime < TARGET).map((v) => `${who(v)} is back on track, ${odds(v.pOnTime)}`);
     return `${lead} Everyone still leaves at ${clock(dep.gateMs)}${helped.length ? `, and ${list(helped)}` : ''}.`;
   }
   const behind = views.filter((v) => v.status === 'late' || v.status === 'tight');
   if (behind.length) {
     const works = Math.ceil(Math.max(...behind.map((v) => v.readyMs)) / 60_000) * 60_000;
-    return `${list(behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, at ${pct(v.pOnTime)}`))}. Leave at ${clock(dep.gateMs)}, or at ${clock(works)} to be sure.`;
+    // What is holding each of them up, when a step has run past its target: the thing to act on.
+    const over = (v: LaneView) => (v.current && now - v.stepEndMs > 60_000 ? ` ${who(v)} is ${minutes((now - v.stepEndMs) / 1000)} over on ${v.current.name.toLowerCase()}.` : '');
+    const each = behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, ${odds(v.pOnTime)}.${over(v)}`);
+    return `${each.join(' ')} Leave at ${clock(dep.gateMs)}, or at ${clock(works)} to be sure.`;
   }
   const going = views.filter((v) => v.status !== 'ready');
   if (!going.length) return `Everyone is ready. Leave at ${clock(dep.gateMs)}.`;
   const tightest = going.reduce((a, b) => (b.pOnTime < a.pOnTime ? b : a));
   const left = Math.max(0, Math.round((dep.gateMs - now) / 60_000));
-  return `Everyone is on time. Leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, at ${pct(tightest.pOnTime)}.`;
+  return `Everyone is on time. Leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, ${odds(tightest.pOnTime)}.`;
 }
 
 // ---------- helpers ----------
 
 const name = z.string().trim().min(1).max(LIMITS.name);
-const leaveAt = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'a 24-hour time like 07:40').describe('Departure time, 24-hour, for example "07:40"');
+const leaveAt = z
+  .string()
+  .regex(/^([01]?\d|2[0-3]):[0-5]\d(\s?[ap]\.?m\.?)?$/i, 'a time like 07:40 or 7:40 pm')
+  .describe('Departure time, for example "07:40", "19:40" or "7:40 pm"');
 
 const slug = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'x';
 
@@ -150,7 +168,9 @@ function findPerson(ctx: Ctx, who: string): PersonDef | undefined {
  * in the past, so it is refused as passed rather than read as tomorrow.
  */
 function gateFrom(hhmm: string, nowMs: number): number {
-  const [h, m] = hhmm.split(':').map(Number);
+  const [hh, m] = hhmm.split(':').map((x) => parseInt(x, 10));
+  const pm = /p\.?m/i.test(hhmm);
+  const h = /[ap]\.?m/i.test(hhmm) ? (hh % 12) + (pm ? 12 : 0) : hh; // 12 am is 0:00, 12 pm is noon
   const d = new Date(nowMs);
   d.setHours(h, m, 0, 0);
   if (d.getTime() <= nowMs) {
@@ -393,8 +413,7 @@ export function buildServer(ctx: Ctx): McpServer {
       }
       const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
       const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
-      const pct = Math.round(Math.abs(next.pace) * 100);
-      const pace = !next.current || pct < 15 ? '' : next.pace > 0 ? ` ${p.name} is running about ${pct}% slow this morning, so I've planned the rest longer.` : ` ${p.name} is about ${pct}% quicker than usual this morning.`;
+      const pace = !next.current || Math.abs(next.pace) < 0.15 ? '' : next.pace > 0 ? ` ${p.name} is running slow this morning, so I've planned the rest longer.` : ` ${p.name} is quicker than usual this morning.`;
       const forIt = next.current ? Math.max(60, Math.round((next.stepEndMs - ctx.now()) / 60_000) * 60) : 0;
       const lead = next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}, about ${minutes(forIt)}.${pace}` : `${p.name} is ready to go.`;
       const note = r.sample?.capped === 'long' ? ' That took far longer than usual, so I have counted it as a slow morning, not a new normal.' : '';
@@ -598,7 +617,7 @@ export function buildServer(ctx: Ctx): McpServer {
       const { n, bands } = honesty(ctx.store.scores);
       if (n < 10) return say(ctx, `I've checked ${n === 0 ? 'none' : `only ${n}`} of my chances against what really happened so far. Ask me again after a few more mornings.`);
       const labels = ['under 50%', '50 to 80%', '80% or more'];
-      const parts = bands.flatMap((b, i) => (b.n < 5 ? [] : [`when I said ${labels[i]} (${pct(b.said)} on average), you made it ${Math.round(b.happened * b.n)} times out of ${b.n}`]));
+      const parts = bands.flatMap((b, i) => (b.n < 5 ? [] : [`when I said ${labels[i]}, ${pct(b.said)} on average, you made it ${Math.round(b.happened * b.n)} times out of ${b.n}`]));
       if (!parts.length) return say(ctx, `I've checked ${n} chances, but not enough of any one kind to say yet. Ask me again after a few more mornings.`);
       return say(ctx, `I've checked ${n} of my chances against what happened. ${parts.join('; ').replace(/^w/, 'W')}.`);
     },

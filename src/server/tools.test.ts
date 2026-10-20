@@ -56,7 +56,8 @@ test('a departure that crosses midnight is tonight, not this morning', async () 
   await client.connect(a);
   await client.listTools(); // so the client checks every reply against its declared output schema, as Alexa+ would
   const text = async (leaveAt: string) => ((await client.callTool({ name: 'start_departure', arguments: { leaveAt } })).content as { text: string }[])[0].text;
-  assert.match(await text('00:15'), /Leave at 0:15, in 35 minutes\./);
+  assert.match(await text('00:15'), /Leave at 12:15 am, in 35 minutes\./);
+  assert.match(await text('12:15 am'), /Leave at 12:15 am, in 35 minutes\./, '"12:15 am" is just after midnight');
   assert.equal(await text('23:30'), '23:30 has already passed today. Say a later time.');
 });
 
@@ -79,13 +80,13 @@ test('the demo morning, as Alexa says it', async () => {
 
   const start = await say(0, 'start_departure', { leaveAt: '07:49' });
   assert.ok(!JSON.stringify(start.board).includes('forecasts'), 'open forecasts are server bookkeeping, not board data');
-  assert.match(start.text, /^School run started\. Everyone is on time\. Leave at 7:49, in 37 minutes\. Isha is the tightest, at 9\d%\. Shall I set a reminder for 7:44, five minutes before you leave\?$/);
+  assert.match(start.text, /^School run started\. Everyone is on time\. Leave at 7:49, in 37 minutes\. Isha is the tightest, with about a 9 in 10 chance\. Shall I set a reminder for 7:44, five minutes before you leave\?$/);
   await say(8.1, 'step_done', { person: 'Dad' });
   await say(12.1, 'step_done', { person: 'aarav' });
   const over = await say(14.5, 'still_going', { person: 'Isha', extraMinutes: 9 });
-  assert.match(over.text, /^Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha\. Everyone still leaves at 7:49, and Isha is now at (8[5-9]|9\d)%\.$/);
+  assert.match(over.text, /^Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha\. Everyone still leaves at 7:49, and Isha is back on track, with about a 9 in 10 chance\.$/);
   const undo = await say(14.6, 'undo_reroute');
-  assert.match(undo.text, /^Back to the old plan\. Isha is running late, at \d+%\. Leave at 7:49, or at 7:5\d to be sure\.$/);
+  assert.match(undo.text, /^Back to the old plan\. Isha is running late, with about (a [1-9] in \d+|an even) chance\.( Isha is \d+ minutes over on shower\.)? Leave at 7:49, or at 7:5\d to be sure\.$/);
   const status = await say(15, 'departure_status');
   assert.ok(!status.error && status.board!.rev > start.board!.rev);
   assert.match((await say(15, 'how_accurate')).text, /^I've checked (none|only \d) of my chances against what really happened so far\./);
