@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
 import { kappaOf, readings, reading, recordPace, rhoOf } from '../core/pace.ts';
 import { planStarts } from '../core/tomorrow.ts';
 import { honesty, noteForecasts, settle } from '../core/score.ts';
-import { currentIndex, currentRemaining, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
+import { currentIndex, currentRemaining, departurePaces, markDone, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
 import { reroute } from '../core/reroute.ts';
 import { quantile, sum } from '../core/stats.ts';
@@ -169,6 +169,37 @@ function noOne(ctx: Ctx, who: string) {
   return refuse(names.length ? `I don't have anyone called ${who}. The household is ${list(names)}.` : 'Nobody is set up yet. Tell me someone\'s morning routine first.');
 }
 const NO_DEPARTURE = 'There is no departure running. Say, for example, start the school run, leave at 7:40.';
+
+/**
+ * Who a sentence is about. Alexa+ does not tell an add-on who is speaking, so "I'm done" can arrive with no
+ * name. Then: the one person whose current step matches the step said ("the shower's done"), or the only
+ * person still getting ready; otherwise a question naming who is on what, so the answer can come back.
+ */
+function whoFor(ctx: Ctx, dep: Departure, person: string | undefined, step: string | undefined): PersonDef | Result {
+  const named = person ? findPerson(ctx, person) : undefined;
+  if (named) return named;
+  // A name we do not know (say, the account holder's) or "me" is treated like no name, and said so if it was a name.
+  const unknown = person && !/^(i|me|myself)$/i.test(person.trim()) ? `I don't have anyone called ${person.trim()}. ` : '';
+  const busy = dep.lanes.flatMap((l) => {
+    const i = currentIndex(l);
+    const p = ctx.store.household.people.find((x) => x.id === l.personId);
+    return i < 0 || !p ? [] : [{ p, on: l.tasks[i].name.toLowerCase() }];
+  });
+  if (!busy.length) return refuse('Everyone is ready to go.');
+  const key = step?.trim().toLowerCase();
+  const matching = key ? busy.filter((b) => b.on.includes(key) || key.includes(b.on)) : busy;
+  if (matching.length === 1 && !unknown) return matching[0].p;
+  const ask = matching.length ? matching : busy;
+  const lead = unknown + (key && !matching.length ? `Nobody is on ${key} right now. ` : '');
+  // Up to three, say what each is on; more than that is too long to hear, so names only.
+  const choices = ask.length > 3 ? `${list(ask.map((b) => b.p.name)).replace(/ and ([^ ]+)$/, ' or $1')}?` : `${list(ask.map((b, i) => `${b.p.name}${i ? '' : ' is'} on ${b.on}`))}.`;
+  return say(ctx, `${lead}Who was that? ${choices}`);
+}
+const asked = (x: PersonDef | Result): x is Result => 'content' in x;
+const whoParams = {
+  person: name.optional().describe("Who it is. Use the name said; if none was said and you recognise the speaker's voice as someone in the household, use theirs; otherwise leave it out."),
+  step: name.optional().describe('The step, if one was said and no person was, for example "shower". It is used to work out who.'),
+};
 
 /**
  * Commit a new departure: re-plan if anyone is late, score what can be scored, note the chances of the
@@ -333,16 +364,16 @@ export function buildServer(ctx: Ctx): McpServer {
     'step_done',
     {
       title: 'Someone finished a step',
-      description: 'Use when someone says they finished what they were doing, for example "I\'m done with breakfast" or "Aarav has brushed his teeth". Moves them to their next step, learns how long it really took, and re-plans if anyone is late. Returns the board.',
-      inputSchema: z.object({ person: name.describe('Who finished') }),
+      description: 'Use when someone says they finished what they were doing, for example "I\'m done", "the shower\'s done" or "Aarav has brushed his teeth". If it is unclear who, the reply asks; pass the answer back as person. Moves them to their next step, learns how long it really took, and re-plans if anyone is late. Returns the board.',
+      inputSchema: z.object(whoParams),
       ...out,
       _meta: { ui },
     },
-    async ({ person }) => {
+    async ({ person, step }) => {
       const dep = ctx.store.departure;
       if (!dep) return refuse(NO_DEPARTURE);
-      const p = findPerson(ctx, person);
-      if (!p) return noOne(ctx, person);
+      const p = whoFor(ctx, dep, person, step);
+      if (asked(p)) return p;
       const lane = dep.lanes.find((l) => l.personId === p.id);
       const task = lane?.tasks.find((t) => t.state === 'todo');
       const finished = task?.name;
@@ -370,23 +401,24 @@ export function buildServer(ctx: Ctx): McpServer {
       title: 'A step is running over',
       description: 'Use when someone is taking longer than planned, for example "Isha\'s still in the shower" or "Aarav needs five more minutes". Re-plans the morning so everyone still makes the departure if the household allows it, and says what changed. Returns the board.',
       inputSchema: z.object({
-        person: name.describe('Who is running over'),
+        ...whoParams,
         extraMinutes: z.number().min(1).max(60).optional().describe('How much longer they need, if said. Otherwise the long end of what the step usually still needs.'),
       }),
       ...out,
       _meta: { ui },
     },
-    async ({ person, extraMinutes }) => {
+    async ({ person, step, extraMinutes }) => {
       const dep = ctx.store.departure;
       if (!dep) return refuse(NO_DEPARTURE);
-      const p = findPerson(ctx, person);
-      if (!p) return noOne(ctx, person);
+      const p = whoFor(ctx, dep, person, step);
+      if (asked(p)) return p;
       const now = ctx.now();
-      const lane = dep.lanes.find((l) => l.personId === p.id);
+      const li = dep.lanes.findIndex((l) => l.personId === p.id);
+      const lane = dep.lanes[li];
       const idx = lane ? currentIndex(lane) : -1;
       if (!lane || idx < 0) return refuse(`${p.name} has nothing left to do.`);
-      // Nobody said how long: plan for the long end (the TARGET quantile) of what this step usually still needs.
-      const extra = Math.round(extraMinutes !== undefined ? extraMinutes * 60 : Math.max(120, quantile(sum([currentRemaining(lane, idx, now, dep.rho)])!, TARGET)));
+      // Nobody said how long: plan for the long end (the TARGET quantile) of what this step usually still needs, at the household's pace.
+      const extra = Math.round(extraMinutes !== undefined ? extraMinutes * 60 : Math.max(120, quantile(sum([currentRemaining(lane, idx, now, dep.rho, departurePaces(dep, now)[li].before)])!, TARGET)));
       const rerouted = commit(ctx, 'still_going', stillGoing(dep, p.id, extra, now), p.id);
       return say(ctx, rerouted ? summary(ctx, ctx.store.departure!, true) : `Noted, ${minutes(extra)} more for ${p.name}. ${summary(ctx, ctx.store.departure!, false)}`);
     },

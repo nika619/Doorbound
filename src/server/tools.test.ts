@@ -10,6 +10,35 @@ import { Audit } from './audit.ts';
 import { Store } from './store.ts';
 import { buildServer } from './tools.ts';
 
+test("with no name said, it works out who from the step, or asks", async () => {
+  const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
+  store.household = household;
+  let now = new Date(2026, 9, 15, 7, 12).getTime();
+  const server = buildServer({ store, audit: new Audit(await mkdtemp(join(tmpdir(), 'audit-'))), client: 'test', boardHtml: () => '<html></html>', now: () => now, clockRate: 1 });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  const client = new Client({ name: 'alexa', version: '1' });
+  await client.connect(a);
+  await client.listTools();
+  const say = async (minute: number, name: string, args: Record<string, unknown> = {}) => {
+    now = new Date(2026, 9, 15, 7, 12).getTime() + minute * 60_000;
+    const r = await client.callTool({ name, arguments: args });
+    return { text: (r.content as { text: string }[])[0].text, error: r.isError === true };
+  };
+  await say(0, 'start_departure', { leaveAt: '07:49' });
+  assert.deepEqual(await say(5, 'step_done'), { text: 'Who was that? Aarav is on breakfast, Isha on shower and Dad on pack lunches.', error: false });
+  assert.match((await say(9, 'step_done', { step: 'Shower' })).text, /^Shower done\. Isha is on to get dressed\./);
+  assert.equal((await say(9.5, 'step_done', { step: 'piano' })).text, 'Nobody is on piano right now. Who was that? Aarav is on breakfast, Isha on get dressed and Dad on pack lunches.');
+  assert.match((await say(10, 'still_going', { step: 'lunches' })).text, /Dad|Re-routed/);
+  for (const [m, who] of [[11, 'Aarav'], [12, 'Aarav'], [13, 'Aarav'], [14, 'Dad'], [15, 'Dad'], [16, 'Dad']] as const) await say(m, 'step_done', { person: who });
+  assert.match((await say(18, 'step_done')).text, /^Get dressed done\./, 'only Isha is left, so it is her');
+  assert.equal((await say(18.5, 'step_done', { person: 'me', step: 'piano' })).text.startsWith('Nobody is on piano'), true, '"me" is no name, not an unknown one');
+  // Four people busy: too many to read out what each is on, so names only.
+  store.household = { people: [...household.people, { id: 'mum', name: 'Mum', steps: [{ id: 'yoga', name: 'Yoga', statedSec: 900 }] }] };
+  await say(20, 'start_departure', { leaveAt: '08:20' });
+  assert.equal((await say(21, 'step_done')).text, 'Who was that? Aarav, Isha, Dad or Mum?');
+});
+
 test('a departure that crosses midnight is tonight, not this morning', async () => {
   const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
   store.household = household;
@@ -60,7 +89,7 @@ test('the demo morning, as Alexa says it', async () => {
   assert.match(tomorrow.text, /^To leave at 7:49 with an 85% chance of everyone making it: Isha by \d+:\d\d, \w+ by \d+:\d\d and \w+ by \d+:\d\d\. Shall I set alarms for those times\?$/);
 
   const nobody = await say(15, 'step_done', { person: 'Zed' });
-  assert.ok(nobody.error);
-  assert.match(nobody.text, /The household is Aarav, Isha and Dad/);
+  assert.ok(!nobody.error, 'an unknown name becomes a question, not a dead end');
+  assert.match(nobody.text, /^I don't have anyone called Zed\. Who was that\? /);
   await client.close();
 });
