@@ -19,12 +19,14 @@ export const BOARD_URI = 'ui://doorbound/board.html';
 
 export interface Ctx {
   store: Store;
-  audit: Audit;
+  audit: Pick<Audit, 'record'>;
   client: string;
   boardHtml: () => string;
   /** Server time. Runs faster than real time only in an explicitly labelled demo. */
   now: () => number;
   clockRate: number;
+  /** This household's private link for a TV or tablet, when the server can make one. */
+  screenLink?: string;
 }
 
 // ---------- the board the screen draws ----------
@@ -531,6 +533,23 @@ export function buildServer(ctx: Ctx): McpServer {
       const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} by ${clock(s.startMs)}`);
       return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it: ${list(named)}. Shall I set alarms for those times?`);
     },
+  );
+
+  registerAppTool(
+    server,
+    'tv_link',
+    {
+      title: 'Put the board on a TV',
+      description: "Use when the customer asks how to show the board on a TV, a tablet or another screen. Returns this household's private link to open in that screen's browser. Changes nothing.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+      ...out,
+      _meta: { ui },
+    },
+    async () =>
+      ctx.screenLink
+        ? say(ctx, `Open this link in the browser on that screen: ${ctx.screenLink} . Keep it private: anyone with it can see your household's board.`)
+        : refuse('This Doorbound server has no TV link set up. Its owner can set SCREEN_KEY.'),
   );
 
   registerAppTool(

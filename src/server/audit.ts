@@ -11,9 +11,9 @@ export class Audit {
   private chain: Promise<void> = Promise.resolve();
   constructor(private readonly dir: string) {}
 
-  record(entry: { tool: string; ok: boolean; person?: string; client: string }): void {
+  record(entry: { tool: string; ok: boolean; person?: string; client: string; household?: string }): void {
     const file = join(this.dir, 'audit.jsonl');
-    const line = JSON.stringify({ t: new Date().toISOString(), tool: entry.tool, ok: entry.ok, person: entry.person, client: createHash('sha256').update(entry.client).digest('hex').slice(0, 12) }) + '\n';
+    const line = JSON.stringify({ t: new Date().toISOString(), tool: entry.tool, ok: entry.ok, household: entry.household, person: entry.person, client: createHash('sha256').update(entry.client).digest('hex').slice(0, 12) }) + '\n';
     // Serialised so lines never interleave and rotation never races an append.
     this.chain = this.chain
       .then(async () => {
