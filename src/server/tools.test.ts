@@ -91,8 +91,9 @@ test('the demo morning, as Alexa says it', async () => {
   assert.match((await say(15, 'how_accurate')).text, /^I've checked (none|only \d) of my chances against what really happened so far\./);
   assert.equal((await say(15, 'allow_change', { person: 'Aarav', step: 'teeth', optional: true })).text, "Got it: Aarav's brush teeth, it can be skipped. It applies from the next departure.");
   assert.match((await say(15, 'allow_change', { person: 'Aarav', step: 'piano', canWait: true })).text, /^Aarav has no step called piano\. Their steps are breakfast, brush teeth and shoes and bag\.$/);
-  const tomorrow = await say(15, 'plan_tomorrow', { leaveAt: '07:49' });
-  assert.match(tomorrow.text, /^To leave at 7:49 with an 85% chance of everyone making it: Isha by \d+:\d\d, \w+ by \d+:\d\d and \w+ by \d+:\d\d\. Shall I set alarms for those times\?$/);
+  assert.match((await say(15, 'plan_tomorrow', { leaveAt: '07:40' })).text, /set alarms for Isha now, /, 'at 7:27, for 7:40, Isha should already be up');
+  const tomorrow = await say(60, 'plan_tomorrow', { leaveAt: '07:49' }); // at 8:12, so 7:49 is tomorrow
+  assert.match(tomorrow.text, /^To leave at 7:49 with an 85% chance of everyone making it, set alarms for Isha at \d+:\d\d, \w+ at \d+:\d\d and \w+ at \d+:\d\d\. That allows 10 minutes to get up\. Shall I set them\?$/);
 
   const nobody = await say(15, 'step_done', { person: 'Zed' });
   assert.ok(!nobody.error, 'an unknown name becomes a question, not a dead end');

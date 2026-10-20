@@ -6,7 +6,7 @@ import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@model
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { kappaOf, readings, reading, recordPace, rhoOf } from '../core/pace.ts';
-import { planStarts } from '../core/tomorrow.ts';
+import { planStarts, WAKE_SEC } from '../core/tomorrow.ts';
 import { honesty, noteForecasts, settle } from '../core/score.ts';
 import { currentIndex, currentRemaining, departurePaces, markDone, markReady, project, setGate, startDeparture, stillGoing, TARGET, undoReroute, type Change, type Departure, type LaneView, type PersonDef, type StepDef } from '../core/departure.ts';
 import { insights, record } from '../core/learn.ts';
@@ -260,11 +260,12 @@ export function buildServer(ctx: Ctx): McpServer {
           )
           .min(1)
           .max(LIMITS.steps),
+        wakeMinutes: z.number().min(1).max(60).optional().describe('How long they take from the alarm to starting the first step, if said. Default 10 minutes.'),
       }),
       ...out,
       _meta: { ui },
     },
-    async ({ person, steps }) => {
+    async ({ person, steps, wakeMinutes }) => {
       const hh = ctx.store.household;
       const existing = findPerson(ctx, person);
       if (!existing && hh.people.length >= LIMITS.people) return refuse(`A household can have up to ${LIMITS.people} people.`);
@@ -284,7 +285,8 @@ export function buildServer(ctx: Ctx): McpServer {
           helpers: s.helpers?.map(slug).filter((h) => h !== id),
         };
       });
-      const def: PersonDef = { id, name: existing?.name ?? person.trim(), steps: defs };
+      const wakeSec = wakeMinutes !== undefined ? Math.round(wakeMinutes * 60) : existing?.wakeSec;
+      const def: PersonDef = { id, name: existing?.name ?? person.trim(), steps: defs, ...(wakeSec ? { wakeSec } : {}) };
       ctx.store.household = { people: existing ? hh.people.map((p) => (p.id === id ? def : p)) : [...hh.people, def] };
       ctx.store.touch();
       void ctx.store.save();
@@ -554,8 +556,10 @@ export function buildServer(ctx: Ctx): McpServer {
       }
       const { starts } = planStarts(ctx.store.household, ctx.store.history, gateMs, rhoOf(ctx.store.pace));
       if (!starts.length) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
-      const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} by ${clock(s.startMs)}`);
-      return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it: ${list(named)}. Shall I set alarms for those times?`);
+      const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} ${s.startMs <= now + 60_000 ? 'now' : `at ${clock(s.startMs)}`}`); // asked late, an alarm already past means: up now
+      const wakes = new Set(ctx.store.household.people.filter((p) => p.steps.length).map((p) => p.wakeSec ?? WAKE_SEC));
+      const allow = wakes.size === 1 ? ` That allows ${minutes([...wakes][0])} to get up.` : '';
+      return say(ctx, `To leave at ${clock(gateMs)} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow} Shall I set them?`);
     },
   );
 
