@@ -23,6 +23,7 @@ interface Dep {
   rho: number;
   kappa?: number;
   paceMean?: number;
+  bias?: number;
   reroute: { atMs: number; changes: Change[]; stillLateSec: number; canUndo: boolean } | null;
 }
 interface Board {

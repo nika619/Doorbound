@@ -49,6 +49,7 @@ const boardSchema = z.object({
       rho: z.number(),
       kappa: z.number().optional(),
       paceMean: z.number().optional(),
+      bias: z.number().optional(),
       reroute: z.object({ atMs: z.number(), changes: z.array(changeSchema), stillLateSec: z.number(), canUndo: z.boolean() }).nullable(),
     })
     .nullable()

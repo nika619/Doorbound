@@ -50,7 +50,7 @@ export const taskSchema = z.object({
 });
 export const laneSchema = z.object({ personId: id, startedAtMs: ms, tasks: z.array(taskSchema).max(LIMITS.people * LIMITS.steps) });
 export const changeSchema = z.object({ kind: z.enum(['quick', 'handoff', 'later', 'skip']), taskKey: z.string().max(80), name, from: id, to: id.optional(), savedSec: z.number().int() });
-const departureCore = z.object({ name, gateMs: ms, startedAtMs: ms, rev: z.number().int().nonnegative(), lanes: z.array(laneSchema).max(LIMITS.people), rho: z.number().min(0).max(RHO_MAX).default(RHO_PRIOR), kappa: z.number().min(0).max(KAPPA_MAX).default(0), paceMean: z.number().min(-1.5).max(1.5).optional(), forecasts: z.array(z.object({ personId: id, p: z.number().min(0).max(1), atMs: ms })).max(256).optional() });
+const departureCore = z.object({ name, gateMs: ms, startedAtMs: ms, rev: z.number().int().nonnegative(), lanes: z.array(laneSchema).max(LIMITS.people), rho: z.number().min(0).max(RHO_MAX).default(RHO_PRIOR), kappa: z.number().min(0).max(KAPPA_MAX).default(0), paceMean: z.number().min(-1.5).max(1.5).optional(), bias: z.number().min(-1.5).max(1.5).optional(), forecasts: z.array(z.object({ personId: id, p: z.number().min(0).max(1), atMs: ms })).max(256).optional() });
 export const departureSchema = departureCore.extend({
   reroute: z
     .object({ atMs: ms, rev: z.number().int(), changes: z.array(changeSchema).max(LIMITS.people * LIMITS.steps), stillLateSec: z.number().int().nonnegative(), before: departureCore.extend({ reroute: z.null() }) })
