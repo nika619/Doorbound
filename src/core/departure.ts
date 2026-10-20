@@ -29,6 +29,8 @@ export interface PersonDef {
   id: string;
   name: string;
   steps: StepDef[];
+  /** From the alarm to starting the first step, in seconds, as they say it. Planning tomorrow uses it; default 10 minutes. */
+  wakeSec?: number;
 }
 
 export interface Household {

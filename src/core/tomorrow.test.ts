@@ -37,6 +37,16 @@ test('no plan with the same chance gives more sleep in total (brute force over o
   assert.ok(ours <= best + 1, `ours ${ours.toFixed(1)} s awake-time vs brute force ${best.toFixed(1)} s`);
 });
 
+test('the times are alarms: getting up is planned as a step of its own, as long as each person says', () => {
+  const plain = planStarts(solo, learnedHistory(), GATE, 0.3).starts[0].startMs;
+  const slow = planStarts({ people: [{ ...solo.people[0], wakeSec: 1500 }] }, learnedHistory(), GATE, 0.3).starts[0].startMs;
+  assert.ok(plain - slow > 13 * 60_000, `25 minutes to get up instead of 10 moves the alarm ${((plain - slow) / 60_000).toFixed(1)} min earlier`);
+  const [{ d }] = wholeMornings(solo, learnedHistory(), 0.3);
+  const steps = wholeMornings({ people: [{ ...solo.people[0], steps: [] }] }, learnedHistory(), 0.3);
+  assert.equal(steps.length, 0, 'nobody with no steps needs an alarm');
+  assert.ok(Math.exp(d.mu) > 10 * 60, 'the whole morning includes getting up');
+});
+
 test('steps that can wait or be skipped never get anyone up earlier', () => {
   const dad = household.people[2];
   const [{ d: all }] = wholeMornings({ people: [{ ...dad, steps: dad.steps.map((s) => ({ ...s, canWait: false })) }] }, new Map(), 0.3);

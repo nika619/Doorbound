@@ -11,16 +11,21 @@
 // is a bisection too. With one person it is just the target quantile.
 //
 // Steps that can wait or be skipped are left out: they never need anyone up earlier, since the morning's
-// re-planner moves them when time is short.
+// re-planner moves them when time is short. Getting up is a step too: from the alarm to the first step, as
+// the person says it (10 minutes if they do not), with the same uncertainty as any stated step, so the
+// times given are alarm times and the 85% already allows for a slow start.
 
 import { lanePart, startDeparture, TARGET, type Household } from './departure.ts';
 import type { History } from './learn.ts';
 import { total } from './pace.ts';
-import { cdf, sum, type LogNormal } from './stats.ts';
+import { cdf, posterior, sum, type LogNormal } from './stats.ts';
+
+/** From the alarm to the first step, when nobody has said: 10 minutes. */
+export const WAKE_SEC = 600;
 
 export interface Start {
   personId: string;
-  /** Latest time to begin their first step. */
+  /** Their alarm: the latest time to get up. */
   startMs: number;
   /** Their own chance of being ready by the gate from that start. */
   pOnTime: number;
@@ -48,11 +53,15 @@ function tAt(d: LogNormal, lambda: number): number {
 /** Each person's whole morning, from the first step, as one log-normal. Steps that can wait or be skipped are left out. */
 export function wholeMornings(household: Household, history: History, rho: number): { personId: string; d: LogNormal }[] {
   const dep = startDeparture(household, history, '', 0, 0, rho);
-  const kept = new Map(household.people.map((p) => [p.id, new Set(p.steps.filter((s) => !s.canWait && !s.optional).map((s) => s.id))]));
+  const people = new Map(household.people.map((p) => [p.id, p]));
   const out: { personId: string; d: LogNormal }[] = [];
   for (const lane of dep.lanes) {
-    const tasks = lane.tasks.filter((t) => kept.get(lane.personId)!.has(t.stepId));
-    if (!tasks.length) continue;
+    const p = people.get(lane.personId)!;
+    const kept = new Set(p.steps.filter((s) => !s.canWait && !s.optional).map((s) => s.id));
+    const steps = lane.tasks.filter((t) => kept.has(t.stepId));
+    if (!steps.length) continue;
+    const getUp = { key: `${p.id}/~wake`, stepId: '~wake', forPerson: p.id, name: 'Getting up', state: 'todo' as const, ...posterior(p.wakeSec ?? WAKE_SEC) };
+    const tasks = [getUp, ...steps];
     const { acc, c } = lanePart({ ...lane, tasks }, 0, rho);
     out.push({ personId: lane.personId, d: sum([total(acc, c)])! });
   }
