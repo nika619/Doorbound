@@ -11,7 +11,16 @@
   },
   "homepage": "https://github.com/nika619/Doorbound#readme",
   "bugs": "https://github.com/nika619/Doorbound/issues",
-  "keywords": ["alexa", "mcp", "model-context-protocol", "mcp-apps", "streamable-http", "household", "probability", "departure-board"],
+  "keywords": [
+    "alexa",
+    "mcp",
+    "model-context-protocol",
+    "mcp-apps",
+    "streamable-http",
+    "household",
+    "probability",
+    "departure-board"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -20,6 +29,7 @@
     "start": "npm run build && node dist/server.mjs",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "smoke": "tsx scripts/smoke.ts",
+    "understand-eval": "tsx scripts/understand-eval.ts",
     "pilot": "tsx scripts/pilot.ts",
     "conformance": "node scripts/conformance.mjs",
     "screens": "node scripts/screens.mjs",
@@ -29,6 +39,7 @@
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.137.0",
     "@modelcontextprotocol/client": "^2.3.1",
     "@modelcontextprotocol/ext-apps": "^2.0.3",
     "@modelcontextprotocol/node": "^2.1.1",
