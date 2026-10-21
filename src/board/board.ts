@@ -368,6 +368,8 @@ function choreograph(rr: { changes: Change[] }) {
   unfocus = setTimeout(() => $('board').classList.remove('focus'), 2600);
 }
 let unfocus: ReturnType<typeof setTimeout> | undefined;
+/** True while a departure's first frame is drawn: rows and runway blocks come in one after another. */
+let opening = false;
 
 /** The tone of a chance: what the curve and the numbers are coloured by. */
 const SEVERITY: Record<string, number> = { done: 0, ok: 1, tight: 2, late: 3 };
@@ -465,6 +467,9 @@ function structure() {
   );
 
   fit(Math.max(1, dep?.lanes.length ?? people.length));
+  // A departure begins (or the screen joins one): the board assembles itself, row by row, then the runway.
+  opening = hasDep && !$('board').classList.contains('running') && !reduced.matches;
+  $('board').classList.toggle('running', hasDep);
 
   // Rows, in household order; people who left the household are removed.
   const ids = new Set(people.map((p) => p.id));
@@ -473,6 +478,7 @@ function structure() {
     const r = rowFor(p.id, i);
     setText(r.label, p.name.toUpperCase());
     $('rows').append(r.li); // re-append keeps order; a no-op for the browser when already in place
+    if (opening) r.li.animate([{ opacity: 0, transform: 'translateY(24px)', filter: 'blur(6px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: 700, delay: 120 + i * 80, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
   });
   if (!dep) {
     for (const p of people) {
@@ -516,6 +522,7 @@ function structure() {
     n.style.top = `${i * laneH}px`;
   });
   second(true);
+  opening = false;
 }
 
 /** Once a second (and after every change): text, statuses and the geometry that moves. */
@@ -614,6 +621,8 @@ function second(animate = false) {
         e.style.width = `${w}px`;
         blk = { e, x, y, w, html: '', cls };
         blocks.set(b.key, blk);
+        // drawn in from the left, lane by lane, in time order
+        if (opening) e.animate([{ clipPath: 'inset(0 100% 0 0 round 8px)' }, { clipPath: 'inset(0 0 0 0 round 8px)' }], { duration: 800, delay: 360 + li * 90 + Math.min(600, x * 0.4), easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
       } else if (blk.x !== x || blk.y !== y || blk.w !== w) {
         if (animate && !reduced.matches && (Math.abs(blk.x - x) > 1 || blk.y !== y)) {
           // FLIP from where it was (we hold the old position: no layout read). A step handed to someone
