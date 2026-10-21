@@ -1,6 +1,7 @@
 # One household's Doorbound on the internet, with HTTPS:
 #   DOMAIN=doorbound.example.com AUTH_TOKEN=$(openssl rand -hex 32) docker compose up -d
-# For Alexa+, also set OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET (32+ characters) and register the add-on as
+# For Alexa+, also set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET and OAUTH_SIGNING_KEY (each 32+ characters; the
+# signing key never leaves this machine, Amazon gets only the client secret) and register the add-on as
 # ALEXA.md says: Alexa+ signs in with those (OAuth client credentials) and calls https://$DOMAIN/mcp.
 # Caddy fetches and renews the certificate for DOMAIN itself (ports 80 and 443 must reach this machine).
 services:
@@ -12,6 +13,7 @@ services:
       SCREEN_KEY: ${SCREEN_KEY:-}
       OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-}
       OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
+      OAUTH_SIGNING_KEY: ${OAUTH_SIGNING_KEY:-}
       OAUTH_REDIRECT_URIS: ${OAUTH_REDIRECT_URIS:-}
       PUBLIC_URL: https://${DOMAIN}
       TRUST_PROXY: "1"

@@ -48,8 +48,13 @@ Resources:
     Type: AWS::SecretsManager::Secret
     Properties:
       Description: Doorbound's tokens; read by the instance at boot, never written into its user data
-      SecretString:
-        Fn::Sub: '{"AUTH_TOKEN":"${AuthToken}","OAUTH_CLIENT_SECRET":"${OAuthClientSecret}"}'
+      # The token-signing key is generated here and never shown to anyone: Amazon holds the client secret, not it.
+      GenerateSecretString:
+        SecretStringTemplate:
+          Fn::Sub: '{"AUTH_TOKEN":"${AuthToken}","OAUTH_CLIENT_SECRET":"${OAuthClientSecret}"}'
+        GenerateStringKey: OAUTH_SIGNING_KEY
+        PasswordLength: 48
+        ExcludePunctuation: true
 
   InstanceRole:
     Type: AWS::IAM::Role
@@ -115,8 +120,8 @@ Resources:
             SECRET=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${Secrets} --query SecretString --output text)
             field() { echo "$SECRET" | python3 -c "import json,sys; print(json.load(sys.stdin)['$1'])"; }
             umask 077
-            printf 'DOMAIN=%s\nAUTH_TOKEN=%s\nOAUTH_CLIENT_ID=%s\nOAUTH_CLIENT_SECRET=%s\nOAUTH_REDIRECT_URIS=%s\n' \
-              '${DomainName}' "$(field AUTH_TOKEN)" '${OAuthClientId}' "$(field OAUTH_CLIENT_SECRET)" '${RedirectUris}' > .env
+            printf 'DOMAIN=%s\nAUTH_TOKEN=%s\nOAUTH_CLIENT_ID=%s\nOAUTH_CLIENT_SECRET=%s\nOAUTH_SIGNING_KEY=%s\nOAUTH_REDIRECT_URIS=%s\n' \
+              '${DomainName}' "$(field AUTH_TOKEN)" '${OAuthClientId}' "$(field OAUTH_CLIENT_SECRET)" "$(field OAUTH_SIGNING_KEY)" '${RedirectUris}' > .env
             docker compose up -d --build
 
   Address:
