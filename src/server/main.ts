@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostHeaderValidation, localhostHostValidation, localhostOriginValidation, originValidation, toNodeHandler } from '@modelcontextprotocol/node';
+import Anthropic from '@anthropic-ai/sdk';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { household as demoHousehold, learnedHistory } from '../core/fixtures.ts';
 import { Audit } from './audit.ts';
@@ -16,6 +17,7 @@ import { accessOf, hookHousehold, hookKey, authorizationServerMetadata, authoriz
 import { RETENTION_DAYS, sweep } from './retention.ts';
 import { Store } from './store.ts';
 import { boardOf, buildServer, endDeparture, finishStep, type Ctx } from './tools.ts';
+import { MODEL, ownTools, understand, type Heard, type Tool } from './understand.ts';
 
 // From source (src/server/) the project is two levels up; the bundle (dist/server.mjs) sits beside the manifest.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +25,8 @@ const root = existsSync(join(here, 'manifest.json')) ? join(here, '..') : join(h
 
 // ---------- configuration ----------
 const env = process.env;
+// This machine's own secrets (an Anthropic key for the simulator's model) go in .env, which git and the image ignore.
+if (existsSync(join(root, '.env'))) process.loadEnvFile(join(root, '.env'));
 const fail = (msg: string): never => {
   console.error(`Doorbound will not start: ${msg}`);
   process.exit(1);
@@ -265,6 +269,36 @@ async function hookRoute(req: IncomingMessage, res: ServerResponse, url: URL, cl
  * A TV's remote: OK on a person's row marks their step done. Only with that screen's key (or AUTH_TOKEN, or
  * on this machine), and only that: the same as saying "Isha's done" to Alexa.
  */
+/**
+ * The simulator's Alexa, a real model: GET names it; POST turns what someone said into one tool call, chosen
+ * from the add-on's own tool list. Only on this machine, and only with ANTHROPIC_API_KEY set.
+ */
+let brain: Promise<{ model: Anthropic; tools: Tool[] }> | undefined;
+async function understandRoute(req: IncomingMessage, res: ServerResponse, client: string) {
+  if (PUBLIC) return send(res, 404, 'Not found.');
+  if (req.method === 'GET') return json(res, 200, { model: env.ANTHROPIC_API_KEY ? MODEL : null });
+  if (!env.ANTHROPIC_API_KEY) return send(res, 404, 'Not found.');
+  if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'GET, POST' });
+  if (limited(res, limits.board, client)) return;
+  let h: Heard;
+  try {
+    h = JSON.parse((await readBody(req, 4096)).toString('utf8')) as Heard;
+  } catch {
+    return send(res, 400, 'Invalid JSON.');
+  }
+  const str = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
+  const ok = str(h.text, 300) && h.text.trim() && str(h.clock, 12) && (h.who === null || str(h.who, 40)) && (h.asked === undefined || str(h.asked, 600)) && Array.isArray(h.people) && h.people.length <= 12 && h.people.every((p) => str(p, 40));
+  if (!ok) return send(res, 400, 'Bad request.');
+  brain ??= ownTools(ctxFor(store, client, null)).then((tools) => ({ model: new Anthropic(), tools }));
+  try {
+    const { model, tools } = await brain;
+    json(res, 200, { ...(await understand(model, tools, { text: h.text, who: h.who, people: h.people, clock: h.clock, asked: h.asked })).understood, model: MODEL });
+  } catch (e) {
+    // The simulator falls back to its phrase list for this one; the reason shows in its MCP log.
+    json(res, 502, { error: e instanceof Anthropic.APIError ? `${e.status ?? ''} ${e.message}`.trim() : (e as Error).message });
+  }
+}
+
 async function doneRoute(req: IncomingMessage, res: ServerResponse, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
   const key = req.headers['x-screen-key'];
@@ -319,6 +353,8 @@ const server = createServer(async (req, res) => {
       case '/':
         // The story page: no data, no tools, the board replaying in the browser. Safe to serve anywhere.
         return pages.site ? pageRoute(req, res, pages.site, client) : send(res, 404, 'Not found.');
+      case '/sim/understand':
+        return await understandRoute(req, res, client);
       case '/sim':
         // The simulator is a development tool: never served beyond this machine.
         return !PUBLIC && pages.sim ? pageRoute(req, res, pages.sim, client, true) : send(res, 404, 'Not found.');
