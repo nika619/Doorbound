@@ -55,6 +55,7 @@ const boardSchema = z.object({
     .nullable()
     .optional(),
   insights: z.array(z.object({ person: z.string(), step: z.string(), statedSec: z.number(), learnedSec: z.number() })).optional(),
+  ended: z.object({ name: z.string(), gateMs: z.number(), atMs: z.number() }).optional(),
 });
 type Board = z.infer<typeof boardSchema>;
 
@@ -77,6 +78,8 @@ function board(ctx: Ctx): Board {
       statedSec: i.statedSec,
       learnedSec: i.learnedSec,
     })),
+    // For a quarter of an hour after the family leaves, a screen can say how it went.
+    ended: !dep && store.ended && ctx.now() - store.ended.atMs < 15 * 60_000 ? store.ended : undefined,
   };
 }
 
@@ -223,6 +226,7 @@ export function endDeparture(ctx: Ctx, left: boolean, tool = 'end_departure'): s
   const now = ctx.now();
   // Out of the door means ready, whatever was not said; a cancelled morning is scored for nobody.
   ctx.store.departure = left ? dep.lanes.reduce((d, l) => markReady(d, l.personId, now) ?? d, dep) : { ...dep, forecasts: [] };
+  ctx.store.ended = left ? { name: dep.name, gateMs: dep.gateMs, atMs: now } : undefined;
   commit(ctx, tool, null);
   if (!left) return `${dep.name} cancelled.`;
   const lateMin = Math.round((now - dep.gateMs) / 60_000);

@@ -75,6 +75,8 @@ export class Store {
   pace: PaceStats = { products: 0, pairs: 0 };
   /** Every chance given and what happened (score.ts). */
   scores: Score[] = [];
+  /** The morning the family last left on, for a screen's closing card. Memory only: a restart forgets it. */
+  ended?: { name: string; gateMs: number; atMs: number };
   /** Changes on every edit; starts from the clock so it never repeats across restarts. Screens compare it to skip work. */
   rev = Date.now();
   private writing: Promise<void> | null = null;

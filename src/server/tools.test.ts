@@ -38,6 +38,8 @@ test("with no name said, it works out who from the step, or asks", async () => {
   // Only "start" and "we've left": everyone counts as ready when they went, and the morning is scored.
   await say(21, 'start_departure', { leaveAt: '07:49' });
   assert.match((await say(40, 'end_departure')).text, /^School run done, 3 minutes after 7:49\./);
+  const ended = ((await client.callTool({ name: 'get_board', arguments: {} })).structuredContent as { ended?: { gateMs: number; atMs: number } }).ended;
+  assert.equal(ended && ended.atMs - ended.gateMs, 3 * 60_000, "a screen's closing card: when they left, against when they had to");
   assert.match((await say(41, 'how_accurate')).text, /^I've checked \d+ of my chances against what happened\. /, 'both mornings were scored');
   // Four people busy: too many to read out what each is on, so names only.
   store.household = { people: [...household.people, { id: 'mum', name: 'Mum', steps: [{ id: 'yoga', name: 'Yoga', statedSec: 900 }] }] };
