@@ -58,10 +58,17 @@ export function readings(lane: Lane): number[] {
     if (t.state !== 'done') continue;
     const sec = (t.doneAtMs! - Math.max(cursor, t.notBeforeMs ?? cursor)) / 1000;
     cursor = t.doneAtMs!;
-    if (t.forPerson === lane.personId && !t.quick && !t.untimed && sec >= 1) out.push(reading(t, sec));
+    if (t.forPerson === lane.personId && !t.quick && !t.untimed && sec >= 1 && plausible(t, sec)) out.push(reading(t, sec));
   }
   return out;
 }
+
+/**
+ * Whether a step's time could be the step itself: within 2.5 sigmas (at least the prior's) of its model, as
+ * the learning cap in departure.ts. A "done" pressed seconds in, or hours late, says nothing about today's
+ * pace. A step someone said was running over is believed however long it took.
+ */
+export const plausible = (t: LogNormal & { extend?: unknown }, sec: number) => !!t.extend || Math.abs(Math.log(sec) - t.mu) <= 2.5 * Math.max(t.sigma, 0.35);
 
 /** Posterior of today's pace Z for this lane. Readings r_k ~ N(sqrt(rho) Z, 1 - rho). O(t). */
 export function paceOf(lane: Lane, rho: number, m0 = 0): Pace {

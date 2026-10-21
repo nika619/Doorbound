@@ -91,7 +91,9 @@ test('the running sums rebuild the exact covariance of the remaining steps', () 
 test('a late tap clamps, and only the person\'s own normal steps count as readings', () => {
   let dep = startDeparture(solo, new Map(), 'run', T0 + 60 * MIN, T0, 0.3);
   dep = markDone(dep, 'p', T0 + 3 * 3_600_000)!.dep; // "done" pressed three hours late
-  assert.deepEqual(readings(dep.lanes[0]), [3]);
+  assert.deepEqual(readings(dep.lanes[0]), [], 'three hours for an 8-minute shower is a late tap, not a slow morning');
+  const quick = markDone(startDeparture(solo, new Map(), 'run', T0 + 60 * MIN, T0, 0.3), 'p', T0 + 3000)!.dep;
+  assert.deepEqual(readings(quick.lanes[0]), [], 'nor is three seconds a fast one');
   const lane = { ...dep.lanes[0], tasks: dep.lanes[0].tasks.map((t, i) => (i === 0 ? { ...t, quick: true } : t)) };
   assert.deepEqual(readings(lane), []);
 });
