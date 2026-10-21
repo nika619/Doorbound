@@ -156,6 +156,8 @@ button.done:disabled { opacity: .25; cursor: default; }
 .undo:hover, .undo:focus-visible, .sound:hover, .sound:focus-visible { border-color: var(--ink); outline: none; }
 .sound[aria-pressed='false'] { color: var(--dim); }
 @keyframes rise { from { opacity: 0; transform: translateY(18px) scale(.98); } }
+/* rolling digits: each one moves on its own */
+.dg { display: inline-block; white-space: pre; }
 .w { display: inline-block; animation: blurIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
 @keyframes blurIn { from { opacity: 0; filter: blur(8px); transform: translateY(20px); } }
 

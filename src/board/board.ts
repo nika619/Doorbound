@@ -70,6 +70,20 @@ function accent(e: HTMLElement, before: string, em: string, after = '') {
   words(e, after, words(m, em, i));
 }
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+/** A time that changes rolls like a mechanical counter: only the digits that changed rise into place. */
+function roll(e: HTMLElement, text: string) {
+  const old = e.dataset.v;
+  if (old === text) return;
+  e.dataset.v = text;
+  if (reduced.matches || !old || old.length !== text.length) return void (e.textContent = text);
+  e.replaceChildren(
+    ...[...text].map((ch, i) => {
+      const d = el('span', 'dg', undefined, ch);
+      if (ch !== old[i]) d.animate([{ transform: 'translateY(55%)', opacity: 0, filter: 'blur(5px)' }, { transform: 'none', opacity: 1, filter: 'none' }], { duration: 520, easing: 'cubic-bezier(.16,1,.3,1)' });
+      return d;
+    }),
+  );
+}
 const hhmm = (ms: number) => {
   const d = new Date(ms);
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -462,7 +476,7 @@ function structure() {
       r.status.set('SCHEDULED', 'done');
       r.chance.set('', 'done');
       drawCurve(r, null, 0, 'done');
-      setText(r.ready, '');
+      roll(r.ready, '');
       setText(r.sr, `${p.name}: scheduled.`);
     }
     for (const b of blocks.values()) b.e.remove();
@@ -505,10 +519,10 @@ function second(animate = false) {
   const t = now();
   const departed = t >= dep.gateMs;
   const minsLeft = Math.max(0, Math.ceil((dep.gateMs - t) / 60_000));
-  setText($('clock'), hhmm(t));
-  setText($('gate'), hhmm(dep.gateMs));
+  roll($('clock'), hhmm(t));
+  roll($('gate'), hhmm(dep.gateMs));
   setText($('gateK'), departed ? 'DEPARTED' : 'LEAVE');
-  setText($('left'), departed ? 'CLOSED' : `${minsLeft} MIN`);
+  roll($('left'), departed ? 'CLOSED' : `${minsLeft} MIN`);
   const ghost = $('ghost');
   const g = departed ? '' : String(minsLeft);
   if (ghost.dataset.key !== g) {
@@ -549,7 +563,7 @@ function second(animate = false) {
       // A change of standing sweeps the row in its new colour, so the eye goes to it.
       if (r.tone && r.tone !== chanceTone && chanceTone !== 'done') sweep(r.li, chanceTone);
       r.tone = chanceTone;
-      setText(r.ready, hhmm(v.readyMs));
+      roll(r.ready, hhmm(v.readyMs));
       if (r.ready.dataset.tone !== chanceTone) r.ready.dataset.tone = chanceTone;
       r.done.disabled = !v.current;
       const sentence = `${nameOf(lane.personId)}: ${status.toLowerCase()}${v.current ? `, now ${v.current.name}, a ${pct(v.pOnTime)} chance of being ready by ${hhmm(dep.gateMs)}${left ? `, ${left.text} on ${v.current.name}` : ''}${pc > 0 ? `, running ${pc}% slow today` : pc < 0 ? `, ${-pc}% ahead today` : ''}` : ''}.`;
