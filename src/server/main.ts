@@ -15,7 +15,7 @@ import { consentPage, keyPage, linkHeaders, page } from './linkpage.ts';
 import { accessOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
 import { RETENTION_DAYS, sweep } from './retention.ts';
 import { Store } from './store.ts';
-import { boardOf, buildServer, endDeparture, type Ctx } from './tools.ts';
+import { boardOf, buildServer, endDeparture, finishStep, type Ctx } from './tools.ts';
 
 // From source (src/server/) the project is two levels up; the bundle (dist/server.mjs) sits beside the manifest.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -260,6 +260,30 @@ async function hookRoute(req: IncomingMessage, res: ServerResponse, url: URL, cl
   json(res, 200, { left: true, said });
 }
 
+/**
+ * A TV's remote: OK on a person's row marks their step done. Only with that screen's key (or AUTH_TOKEN, or
+ * on this machine), and only that: the same as saying "Isha's done" to Alexa.
+ */
+async function doneRoute(req: IncomingMessage, res: ServerResponse, client: string) {
+  if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
+  const key = req.headers['x-screen-key'];
+  const presented = typeof key === 'string' ? key : bearer(req);
+  const household = OAUTH && presented ? screenHousehold(OAUTH, presented) : null;
+  if (!household && (PUBLIC || SCREEN_KEY) && !((SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN)))) return send(res, 401, 'Unauthorized.');
+  if (limited(res, limits.board, client)) return;
+  let person: unknown;
+  try {
+    person = (JSON.parse((await readBody(req, 1024)).toString('utf8')) as { person?: unknown }).person;
+  } catch {
+    return send(res, 400, 'Invalid JSON.');
+  }
+  const s = household ? await householdStore(household) : store;
+  const p = typeof person === 'string' ? s.household.people.find((x) => x.id === person) : undefined;
+  if (!p) return json(res, 404, { said: 'Nobody by that name here.' });
+  const r = finishStep(ctxFor(s, client, household), p);
+  json(res, r.error ? 409 : 200, { said: r.text });
+}
+
 async function tokenRoute(req: IncomingMessage, res: ServerResponse, url: URL, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
   if (limited(res, limits.token, client)) return;
@@ -304,6 +328,8 @@ const server = createServer(async (req, res) => {
       case '/.well-known/oauth-protected-resource':
       case '/.well-known/oauth-protected-resource/mcp':
         return OAUTH ? json(res, 200, protectedResourceMetadata(OAUTH)) : send(res, 404, 'Not found.');
+      case '/api/done':
+        return await doneRoute(req, res, client);
       case '/hooks/left':
         return await hookRoute(req, res, url, client);
       case '/oauth/authorize':
