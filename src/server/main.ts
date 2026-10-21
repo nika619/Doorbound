@@ -139,6 +139,15 @@ const MAX_BODY = 64 * 1024;
 function send(res: ServerResponse, status: number, body: string, headers: Record<string, string> = {}) {
   res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...headers }).end(body);
 }
+/**
+ * A POST that changes something must say it is JSON. A page on another site cannot send that without asking
+ * first (a CORS preflight), which this server never grants: no cross-site request can reach these routes.
+ */
+function notJson(req: IncomingMessage, res: ServerResponse): boolean {
+  const ok = /^application\/json\b/i.test(req.headers['content-type'] ?? '');
+  if (!ok) send(res, 415, 'Send JSON.');
+  return !ok;
+}
 function limited(res: ServerResponse, limiter: RateLimiter, client: string): boolean {
   const wait = limiter.take(client, Date.now());
   if (wait) send(res, 429, 'Too many requests.', { 'Retry-After': String(wait) });
@@ -147,7 +156,7 @@ function limited(res: ServerResponse, limiter: RateLimiter, client: string): boo
 
 async function mcpRoute(req: IncomingMessage, res: ServerResponse, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
-  if (!validateHost(req, res) || !validateOrigin(req, res)) return; // the validators answer 403 themselves
+  if (!validateOrigin(req, res)) return; // answers 403 itself; the Host was checked for every route
   // Whose household this request is for: a linked household's token names it; AUTH_TOKEN, and Alexa's own
   // service token on a single-household server, mean the server's own; Alexa's service token on a linking
   // server means nobody's (null): it may list tools, never run one.
@@ -279,7 +288,7 @@ async function understandRoute(req: IncomingMessage, res: ServerResponse, client
   if (req.method === 'GET') return json(res, 200, { model: env.ANTHROPIC_API_KEY ? MODEL : null });
   if (!env.ANTHROPIC_API_KEY) return send(res, 404, 'Not found.');
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'GET, POST' });
-  if (limited(res, limits.board, client)) return;
+  if (notJson(req, res) || limited(res, limits.board, client)) return;
   let h: Heard;
   try {
     h = JSON.parse((await readBody(req, 4096)).toString('utf8')) as Heard;
@@ -309,7 +318,7 @@ async function voiceRoute(req: IncomingMessage, res: ServerResponse, client: str
   if (req.method === 'GET') return json(res, 200, { voice: env.ELEVENLABS_API_KEY ? VOICE.name : null });
   if (!env.ELEVENLABS_API_KEY) return send(res, 404, 'Not found.');
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'GET, POST' });
-  if (limited(res, limits.board, client)) return;
+  if (notJson(req, res) || limited(res, limits.board, client)) return;
   let text: unknown;
   try {
     text = (JSON.parse((await readBody(req, 2048)).toString('utf8')) as { text?: unknown }).text;
@@ -333,6 +342,7 @@ async function voiceRoute(req: IncomingMessage, res: ServerResponse, client: str
 
 async function doneRoute(req: IncomingMessage, res: ServerResponse, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
+  if (notJson(req, res)) return;
   const key = req.headers['x-screen-key'];
   const presented = typeof key === 'string' ? key : bearer(req);
   const household = OAUTH && presented ? screenHousehold(OAUTH, presented) : null;
@@ -375,6 +385,9 @@ const server = createServer(async (req, res) => {
   const client = clientOf(req, TRUST_PROXY);
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
+    // Every route checks the Host: a web page whose name resolves to this machine (DNS rebinding) is refused.
+    // /healthz is exempt: health checks call it by address, and it says nothing.
+    if (url.pathname !== '/healthz' && !validateHost(req, res)) return;
     switch (url.pathname) {
       case '/mcp':
         return await mcpRoute(req, res, client);

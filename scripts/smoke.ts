@@ -1,6 +1,7 @@
 // End-to-end check against a running server (npm run demo, or npm start). Plays the part of Alexa+'s
 // MCP client over Streamable HTTP, then pokes the HTTP edges a stranger would.
 import assert from 'node:assert/strict';
+import { request } from 'node:http';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 const base = process.env.DOORBOUND_URL ?? 'http://127.0.0.1:3939';
@@ -112,6 +113,14 @@ step('/ serves the story page under the same hash-only CSP');
 assert.equal((await fetch(new URL('/nope', base))).status, 404);
 assert.equal(await (await fetch(new URL('/healthz', base))).text(), 'ok');
 step('unknown paths are 404; /healthz answers');
+// A page whose name resolves to this machine (DNS rebinding) is refused on every route, not only /mcp;
+// fetch cannot forge a Host header, so this asks with node:http. And a cross-site form post is not JSON.
+const statusWithHost = (path: string, host: string) =>
+  new Promise<number>((ok, no) => request(new URL(path, base), { headers: { Host: host } }, (r) => (r.resume(), ok(r.statusCode ?? 0))).on('error', no).end());
+assert.equal(await statusWithHost('/api/board?since=-1', 'rebind.example'), 403);
+assert.equal(await statusWithHost('/board', 'rebind.example'), 403);
+assert.equal((await fetch(new URL('/api/done', base), { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"person":"isha"}' })).status, 415);
+step('a foreign Host is refused on every route; a POST that is not JSON is refused');
 // The simulator's model: only on the server's own machine (404 beyond it), only with a key there, never on bad input.
 const understand = await fetch(new URL('/sim/understand', base));
 assert.ok(understand.status === 404 || (understand.status === 200 && 'model' in ((await understand.json()) as object)), `GET /sim/understand: ${understand.status}`);
