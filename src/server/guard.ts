@@ -138,3 +138,29 @@ export function clientOf(req: IncomingMessage, trustProxy: boolean): string {
 }
 
 export const isLoopback = (host: string) => host === '127.0.0.1' || host === '::1' || host === 'localhost';
+
+/**
+ * One value per key, opened once: callers asking at the same moment share one promise, so two copies of
+ * the same household can never overwrite each other. The least recently used goes first, but never one
+ * used within `idleMs` (a request may still be writing through it); past `max` busy keys the cache grows.
+ */
+export function openOnce<T>(open: (id: string) => Promise<T>, max: number, idleMs: number, now = Date.now) {
+  const m = new Map<string, { value: Promise<T>; used: number }>();
+  return {
+    get(id: string): Promise<T> {
+      let e = m.get(id);
+      if (e) m.delete(id); // re-inserted below: the most recent is last
+      else {
+        const [oldId, old] = m.entries().next().value ?? [];
+        if (m.size >= max && old && now() - old.used > idleMs) m.delete(oldId!);
+        e = { value: open(id), used: 0 };
+        e.value.catch(() => m.delete(id)); // a failed open is tried again next time, not cached
+      }
+      e.used = now();
+      m.set(id, e);
+      return e.value;
+    },
+    has: (id: string) => m.has(id),
+    delete: (id: string) => m.delete(id),
+  };
+}

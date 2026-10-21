@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import type { IncomingMessage } from 'node:http';
-import { BodyTooLarge, pageCsp, RateLimiter, readBody, tokenMatches } from './guard.ts';
+import { BodyTooLarge, openOnce, pageCsp, RateLimiter, readBody, tokenMatches } from './guard.ts';
 
 test('token comparison: exact match only, any length, never throws', () => {
   const secret = 'x'.repeat(40);
@@ -59,4 +59,19 @@ test('peek says what take would, without spending: for limits that count only fa
   assert.equal(rl.peek('a', 0), 1);
   assert.equal(rl.peek('a', 0), 1, 'peeking spends nothing');
   assert.equal(rl.peek('a', 1000), 0, 'and it refills');
+});
+
+test('a household is opened once, shared by requests at the same moment, and not evicted while busy', async () => {
+  let t = 0;
+  const opened: string[] = [];
+  const cache = openOnce(async (id) => (opened.push(id), { id }), 2, 60_000, () => t);
+  const [a, b] = await Promise.all([cache.get('x'), cache.get('x')]);
+  assert.equal(a, b, 'two requests at once get the same store');
+  await cache.get('y');
+  t = 30_000;
+  await cache.get('z'); // the cache is full, but x was used 30 s ago: it stays, and the cache grows
+  assert.deepEqual([cache.has('x'), cache.has('y'), cache.has('z')], [true, true, true]);
+  t = 200_000;
+  await cache.get('w'); // now x has been idle long enough to go
+  assert.deepEqual([cache.has('x'), opened], [false, ['x', 'y', 'z', 'w']]);
 });
