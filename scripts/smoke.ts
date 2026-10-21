@@ -219,6 +219,10 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
     assert.ok(!(early as { isError?: boolean }).isError);
     assert.equal((await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).status, 202, 'too early: ignored');
     assert.equal((await fetch(new URL(hook.pathname, base), { method: 'POST', headers: { 'X-Hook-Key': hook.searchParams.get('k')! } })).status, 202, 'the key works in a header too');
+    // A tag by the bathroom door: Noor's step is done without a word to Alexa.
+    const tag = await fetch(new URL(`/hooks/done${hook.search}&person=Noor`, base), { method: 'POST' });
+    assert.deepEqual([tag.status, ((await tag.json()) as { said: string }).said.split('.')[0]], [200, 'Shower done']);
+    assert.equal((await fetch(new URL(`/hooks/done?k=${tv}&person=Noor`, base), { method: 'POST' })).status, 401, 'a TV link is not a sensor key');
     await a.say('change_departure', { leaveAt: at(10) });
     const left = (await (await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).json()) as { left: boolean };
     assert.equal(left.left, true);
