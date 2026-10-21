@@ -174,6 +174,13 @@ button.done:disabled { opacity: .25; cursor: default; }
 .empty .big em { color: var(--amber); font-size: 1.1em; }
 .empty .say { font: 500 34px/1.4 var(--body); color: var(--dim); max-width: 1300px; }
 .empty .say b { color: var(--ink); font-weight: 500; }
+/* the closing card: the time they left, in green when it beat the gate, under a slow bloom */
+.empty { position: relative; }
+.empty.finale .big em { color: var(--go); }
+.empty.finale[data-tone='late'] .big em { color: var(--amber); }
+.empty.finale::before { content: ''; position: absolute; inset: -30% -6% -30% -12%; z-index: -1; pointer-events: none; background: radial-gradient(45% 55% at 28% 50%, #8fdcaa24, transparent 70%); animation: bloom 1.8s var(--ease) both; }
+.empty.finale[data-tone='late']::before { background: radial-gradient(45% 55% at 28% 50%, #ffb5471f, transparent 70%); }
+@keyframes bloom { from { opacity: 0; transform: scale(.85); } }
 
 /* ---------- inline card (Alexa's conversation view) ---------- */
 .card { position: absolute; inset: 0; padding: 20px 22px; background: radial-gradient(500px 260px at 0 0, #ffb5471a, transparent 70%), var(--board); display: grid; grid-template-rows: auto auto 1fr auto; gap: 12px; }
@@ -189,7 +196,7 @@ button.done:disabled { opacity: .25; cursor: default; }
 .card .open:hover, .card .open:focus-visible { border-color: var(--ink); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .reroute, .row, .msg .dot, .w, .row.sweep::after { animation: none; }
+  .reroute, .row, .msg .dot, .w, .row.sweep::after, .empty.finale::before { animation: none; }
   .blk, .band, .hair { transition: none; }
 }
 </style>

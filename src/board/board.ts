@@ -35,6 +35,7 @@ interface Board {
   people?: { id: string; name: string }[];
   departure?: Dep | null;
   insights?: { person: string; step: string; statedSec: number; learnedSec: number }[];
+  ended?: { name: string; gateMs: number; atMs: number };
 }
 const isBoard = (x: unknown): x is Board => !!x && typeof x === 'object' && typeof (x as Board).rev === 'number' && typeof (x as Board).serverNowMs === 'number';
 
@@ -449,19 +450,39 @@ function structure() {
   const dep = board?.departure;
   const people = board?.people ?? [];
   const hasDep = !!dep && dep.lanes.length > 0;
-  $('table').hidden = !people.length;
+  // shortcut: the closing card stays until the board next changes, not exactly 15 minutes; fine for a kitchen screen.
+  const ended = !dep ? board?.ended : undefined;
+  const spare = ended ? Math.round((ended.gateMs - ended.atMs) / 60_000) : 0;
+  $('table').hidden = !people.length || !!ended;
   $('runway').hidden = !hasDep;
   $('when').hidden = !hasDep;
   $('empty').hidden = hasDep;
   $('ghost').hidden = !hasDep;
-  setText($('eyebrow'), hasDep ? 'DOORBOUND · TODAY' : 'DOORBOUND');
+  setText($('eyebrow'), hasDep ? 'DOORBOUND · TODAY' : ended ? 'DOORBOUND · DEPARTED' : 'DOORBOUND');
   if (dep) accent($('title'), 'The ', dep.name.toLowerCase());
+  else if (ended) accent($('title'), 'The ', ended.name.toLowerCase());
   else accent($('title'), people.length ? 'The ' : '', people.length ? 'next departure' : 'Doorbound');
-  if (people.length) accent($('emptyBig'), 'Ready when ', 'you are', '.');
+  // The morning's last frame: when the family left, against when they had to.
+  $('empty').classList.toggle('finale', !!ended);
+  $('empty').dataset.tone = spare >= 0 ? 'ok' : 'late';
+  if (!dep) {
+    document.querySelector('.reroute')?.remove();
+    $('msg').hidden = true;
+  }
+  if (ended) accent($('emptyBig'), 'Out the door at ', hhmm(ended.atMs), '.');
+  else if (people.length) accent($('emptyBig'), 'Ready when ', 'you are', '.');
   else accent($('emptyBig'), 'Tell Alexa your ', 'mornings', '.');
   setText(
     $('emptySay'),
-    people.length
+    ended
+      ? spare >= 2
+        ? `${spare} minutes to spare. Everyone made it.`
+        : spare === 1
+          ? 'A minute to spare. Everyone made it.'
+          : spare === 0
+            ? 'Right on time. Everyone made it.'
+            : `${-spare} min after ${hhmm(ended.gateMs)}. Tomorrow's plan has learned from it.`
+      : people.length
       ? 'Say: "Alexa, start the school run. We leave at 7:40."'
       : 'For example: "Alexa, Isha showers for 8 minutes, then gets dressed for 6, then has breakfast." Doorbound learns how long things really take, and keeps everyone on time.',
   );
@@ -853,6 +874,7 @@ function replay() {
   const names = new Map(demoHousehold.people.map((p) => [p.id, p]));
   let h = learnedHistory();
   let dep: Departure | null = null;
+  let ended: Board['ended'];
   let next = 0;
   let rev = 0;
   let t0 = 0;
@@ -862,6 +884,7 @@ function replay() {
     t0 = d.getTime();
     h = learnedHistory();
     dep = null;
+    ended = undefined;
     next = 0;
     syncServer = t0;
     syncPerf = performance.now();
@@ -879,6 +902,7 @@ function replay() {
         insights: insights(h, stated)
           .slice(0, 3)
           .map((i) => ({ person: names.get(i.personId)!.name, step: names.get(i.personId)!.steps.find((s) => s.id === i.stepId)!.name, statedSec: i.statedSec, learnedSec: i.learnedSec })),
+        ended: dep ? undefined : ended,
       },
       performance.now(),
     );
@@ -887,11 +911,12 @@ function replay() {
     const t = now();
     while (next < DEMO_MORNING.length && t >= t0 + DEMO_MORNING[next].at * 60_000) {
       const at = t0 + DEMO_MORNING[next].at * 60_000;
+      if (dep && 'left' in DEMO_MORNING[next].act) ended = { name: dep.name, gateMs: dep.gateMs, atMs: at };
       dep = demoStep(dep, DEMO_MORNING[next++].act, at, h);
       publish(at);
     }
-    // Hold the finished board for a moment past the gate, then start the morning again.
-    if (dep && t > dep.gateMs + 90_000) {
+    // Hold the closing card for a few minutes of demo time, then start the morning again.
+    if (next >= DEMO_MORNING.length && t > t0 + (DEMO_MORNING[DEMO_MORNING.length - 1].at + 6) * 60_000) {
       begin();
       publish(t0);
     }
