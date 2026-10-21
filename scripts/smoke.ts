@@ -188,6 +188,12 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
     const tv = (await a.say('tv_link')).content[0].text.match(/#k=(\S+)/)![1];
     const board = (await (await fetch(new URL('/api/board', base), { headers: { 'X-Screen-Key': tv } })).json()) as { people: { name: string }[] };
     assert.deepEqual(board.people.map((p) => p.name), ['Noor'], "a household's TV link shows that household");
+    // A TV's remote: OK on a row marks that step done, with that TV's key and nothing else.
+    await a.say('start_departure', { leaveAt: at(30) });
+    const remote = await fetch(new URL('/api/done', base), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Screen-Key': tv }, body: JSON.stringify({ person: 'noor' }) });
+    assert.equal(remote.status, 200);
+    assert.match(((await remote.json()) as { said: string }).said, /^Shower done\./);
+    assert.equal((await fetch(new URL('/api/done', base), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Screen-Key': `${tv.slice(0, -3)}xyz` }, body: '{"person":"noor"}' })).status, 401);
     // A door sensor says "we've left": not before 15 minutes to leaving time, then it ends the morning.
     const door = (await a.say('door_link')).content[0].text.match(/POST to (\S+) when/)![1];
     const hook = new URL(door);
