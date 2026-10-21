@@ -218,6 +218,7 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
     const early = await a.say('start_departure', { leaveAt: at(30) });
     assert.ok(!(early as { isError?: boolean }).isError);
     assert.equal((await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).status, 202, 'too early: ignored');
+    assert.equal((await fetch(new URL(hook.pathname, base), { method: 'POST', headers: { 'X-Hook-Key': hook.searchParams.get('k')! } })).status, 202, 'the key works in a header too');
     await a.say('change_departure', { leaveAt: at(10) });
     const left = (await (await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).json()) as { left: boolean };
     assert.equal(left.left, true);

@@ -283,7 +283,9 @@ async function authorizeRoute(req: IncomingMessage, res: ServerResponse, url: UR
 async function hookRoute(req: IncomingMessage, res: ServerResponse, url: URL, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
   if (limited(res, limits.page, client)) return;
-  const presented = url.searchParams.get('k') ?? bearer(req);
+  // In the URL for sensors that can only call one; in an X-Hook-Key header for those that can send one.
+  const header = req.headers['x-hook-key'];
+  const presented = url.searchParams.get('k') ?? (typeof header === 'string' ? header : bearer(req));
   const household = await current(OAUTH && presented ? hookHousehold(OAUTH, presented) : null);
   if (!household && !(AUTH_TOKEN && tokenMatches(presented ?? undefined, AUTH_TOKEN)) && (PUBLIC || AUTH_TOKEN || OAUTH)) return send(res, 401, 'Unauthorized.');
   const s = household ? await householdStore(household) : store;
