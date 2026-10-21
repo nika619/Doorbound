@@ -39,6 +39,8 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 
 ## The maths, in plain words
 
+The demo household (Aarav, Isha, Dad) and its "learned" history are illustrative, not measured; the board says so in its replay.
+
 Everything the board and Alexa say comes from one model, in `src/core/stats.ts`, `src/core/pace.ts` and `src/core/departure.ts`.
 
 1. **A step's length is a distribution, not a number.** Each person's step is log-normal: always positive, and it can run long but never negative. The stated time is a prior worth two mornings; each real morning pulls the estimate towards what happens. With stated time *s*, real durations *x₁…xₙ*, prior weight *k = 2* and prior spread *σ₀ = 0.35*:
@@ -62,6 +64,8 @@ The story page draws each of these from the real code as you scroll: the curve l
 ![The story page: her chance falls to 47%, the search tries the gentlest fixes, and the cheapest that works wins](docs/story-replan.jpg)
 
 **How we know it is right** (all in `npm test`):
+
+- **Not only against itself.** The checks below draw mornings from the model; `robust.test.ts` draws them from processes that break its assumptions, with each household learning from five past mornings (30 households x 500 mornings each when measured; a smaller run in the test). Calibration error, and what happened when it said 80-90%: mornings that follow the model 1.5% (84%); 8% of steps taking 1.5 to 3 times as long 3.1% (77%); gamma-shaped steps 2.1% (82%); people who say 60% of the truth 1.1% (84%); 5% of "done"s said 20 minutes late 6.7% (90%: cautious, the safe side). Two fixes came out of it: plan with the predictive spread (a learned time is itself uncertain after five mornings; without this, 85% meant about 81%), and learn the household's own planning fallacy across all its steps (for people who underestimate, the error fell from 6.5% to 1.1%). Heavy tails remain the weakest case: at 85% they deliver about 77%, which the kept score shows a household on its own mornings.
 
 - **Calibrated:** on 40,000 simulated mornings with a shared daily pace, looked at a random moment (usually mid-step), when it says 80–90% it happens **84.9%** of the time. Its calibration error is **0.39%**, as low as the log-normal sum allows (0.37% when steps really are independent); the same model with steps taken as independent is off by 2.44%.
 - The pace posterior and the censored update match numerical integration to 1e-5; the running sums match the exact covariance to 1e-4. The household pace matches 2-D integration, equals the per-person pace exactly when κ = 0, and on 12,000 three-person mornings with shared slow days lowers the Brier score (0.1278 against 0.1309).
