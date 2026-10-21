@@ -6,7 +6,7 @@ Doorbound keeps a household's data on the Doorbound server it is linked to, and 
 
 **What it does not keep:** no audio (Alexa+ turns speech into tool calls before anything reaches Doorbound), no location, no contacts, no account details, no advertising identifiers, and no analytics.
 
-**Who it is shared with:** no one. Doorbound sends nothing to third parties. Alexa+ calls your server to run the tools you ask for; Amazon's own handling of your voice requests is covered by Amazon's privacy notice.
+**Who it is shared with:** no one. Doorbound sends nothing to third parties. (A developer trying the simulator with their own Anthropic key sends Anthropic what they type or say there, with first names and the time; that is a tool on their own computer, not the add-on.) Alexa+ calls your server to run the tools you ask for; Amazon's own handling of your voice requests is covered by Amazon's privacy notice.
 
 **Children:** Doorbound is used by parents and carers to run their household's morning; it is not directed to children. A child's first name and routine are entered by the parent or carer whose Alexa account is linked. Nothing is collected from children directly, there is no profiling and no advertising, and nothing leaves the server.
 
