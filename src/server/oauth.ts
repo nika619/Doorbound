@@ -17,6 +17,8 @@ import { tokenMatches } from './guard.ts';
 export interface OAuthConfig {
   clientId: string;
   clientSecret: string;
+  /** Signs every token and key. The server's alone: Amazon holds the client secret, so it must not sign anything. */
+  signingKey: string;
   /** The server's public origin, for example https://doorbound.example.com (no path, no trailing slash). */
   publicUrl: string;
   /** Where Alexa+ may be sent back to after linking (exact match). None: no account linking. */
@@ -34,7 +36,7 @@ export const linking = (c: OAuthConfig) => !!c.redirectUris?.length;
 export const resourceOf = (c: OAuthConfig) => `${c.publicUrl}/mcp`;
 
 const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
-const keyOf = (c: OAuthConfig) => createHmac('sha256', c.clientSecret).update('doorbound access token v1').digest();
+const keyOf = (c: OAuthConfig) => createHmac('sha256', c.signingKey).update('doorbound access token v1').digest();
 
 /** `kind.claims.signature`, the signature covering kind and claims, so one kind cannot pass for another. */
 function seal(c: OAuthConfig, kind: string, claims: Record<string, unknown>): string {

@@ -45,10 +45,12 @@ const DEMO_SPEED = Number(env.DEMO_SPEED ?? 1);
 // Alexa+ signs in with OAuth client credentials (oauth.ts): all three, or none.
 const OAUTH: OAuthConfig | undefined =
   env.OAUTH_CLIENT_ID || env.OAUTH_CLIENT_SECRET
-    ? { clientId: env.OAUTH_CLIENT_ID ?? '', clientSecret: env.OAUTH_CLIENT_SECRET ?? '', publicUrl: (env.PUBLIC_URL ?? '').replace(/\/$/, ''), redirectUris: csv(env.OAUTH_REDIRECT_URIS) }
+    ? { clientId: env.OAUTH_CLIENT_ID ?? '', clientSecret: env.OAUTH_CLIENT_SECRET ?? '', signingKey: env.OAUTH_SIGNING_KEY ?? '', publicUrl: (env.PUBLIC_URL ?? '').replace(/\/$/, ''), redirectUris: csv(env.OAUTH_REDIRECT_URIS) }
     : undefined;
 if (OAUTH) {
   if (!OAUTH.clientId || OAUTH.clientSecret.length < 32) fail('OAUTH_CLIENT_ID, an OAUTH_CLIENT_SECRET of at least 32 characters and PUBLIC_URL go together.');
+  // Whoever holds the client secret (Amazon does) must not be able to mint a household's token: a separate key signs.
+  if (OAUTH.signingKey.length < 32 || OAUTH.signingKey === OAUTH.clientSecret) fail('set OAUTH_SIGNING_KEY: 32 or more random characters, not the client secret, known only to this server.');
   const u = URL.canParse(OAUTH.publicUrl) ? new URL(OAUTH.publicUrl) : null;
   if (!u || u.pathname !== '/' || u.search || u.hash || (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLoopback(u.hostname))))
     fail('PUBLIC_URL must be the https origin clients use, for example https://doorbound.example.com.');

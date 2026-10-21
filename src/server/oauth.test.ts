@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { accessOf, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, newHouseholdKey, redirectWith, resourceOf, screenHousehold, screenKey, TOKEN_TTL_SEC, USER_SCOPE, verifyAccessToken, type AuthRequest, type OAuthConfig } from './oauth.ts';
 
-const c: OAuthConfig = { clientId: 'alexa-plus', clientSecret: 's'.repeat(40), publicUrl: 'https://doorbound.example.com' };
+const c: OAuthConfig = { clientId: 'alexa-plus', clientSecret: 's'.repeat(40), signingKey: 'k'.repeat(40), publicUrl: 'https://doorbound.example.com' };
 const NOW = 1_800_000_000;
 const basic = (id: string, secret: string) => `Basic ${Buffer.from(`${encodeURIComponent(id)}:${encodeURIComponent(secret)}`).toString('base64')}`;
 const form = (o: Record<string, string>) => new URLSearchParams({ grant_type: 'client_credentials', resource: resourceOf(c), ...o });
@@ -18,7 +18,10 @@ test('client credentials in, an hour-long Bearer token for this server out', () 
   assert.ok(verifyAccessToken(c, token, NOW + 10));
   assert.ok(!verifyAccessToken(c, token, NOW + TOKEN_TTL_SEC), 'expired after an hour');
   assert.ok(!verifyAccessToken({ ...c, publicUrl: 'https://other.example.com' }, token, NOW), 'bound to this server');
-  assert.ok(!verifyAccessToken({ ...c, clientSecret: 't'.repeat(40) }, token, NOW), 'a new secret revokes every token');
+  assert.ok(!verifyAccessToken({ ...c, signingKey: 't'.repeat(40) }, token, NOW), 'a new signing key revokes every token');
+  // Amazon holds the client secret; knowing it must not be enough to mint a token for any household.
+  const minted = issueToken({ ...c, signingKey: c.clientSecret }, form({}), basic('alexa-plus', c.clientSecret), NOW).body.access_token;
+  assert.ok(!verifyAccessToken(c, String(minted), NOW), 'a token signed with the client secret is refused');
   assert.ok(!verifyAccessToken(c, `${token.slice(0, -2)}xx`, NOW), 'a changed signature fails');
   // Swap in claims with a later expiry but keep the signature: refused.
   const [, p, s] = token.split('.');
@@ -113,5 +116,5 @@ test('household keys: random, forgiving to type, never stored; TV keys verify wi
   const hh = householdOf(k)!;
   assert.equal(screenHousehold(linked, screenKey(linked, hh)), hh);
   assert.equal(screenHousehold(linked, `h.${hh}.forged`), null);
-  assert.equal(screenHousehold({ ...linked, clientSecret: 'x'.repeat(40) }, screenKey(linked, hh)), null, 'a new secret revokes TV links too');
+  assert.equal(screenHousehold({ ...linked, signingKey: 'x'.repeat(40) }, screenKey(linked, hh)), null, 'a new signing key revokes TV links too');
 });
