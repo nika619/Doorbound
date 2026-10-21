@@ -24,7 +24,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
 [hidden] { display: none !important; }
 /* the same static film grain as the board */
 body::after { content: ''; position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: .06; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"); }
-.w { display: inline-block; animation: blurIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.w { display: inline-block; animation: blurIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * var(--step, 45ms)); }
 @keyframes blurIn { from { opacity: 0; filter: blur(8px); transform: translateY(14px); } }
 
 /* ---------- the room: a warm wall, one light on the screen ---------- */

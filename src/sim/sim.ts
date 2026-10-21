@@ -129,7 +129,17 @@ function words(into: HTMLElement, text: string) {
     else el('span', 'w', into, part).style.setProperty('--i', String(i++));
   }
 }
-function addMsg(kind: 'you' | 'alexa', text: string, who: string, error = false) {
+/** Alexa's subtitle, word by word; `stepMs` paces the words to her voice when there is one. */
+function caption(text: string, error = false, stepMs = 45) {
+  const alexa = $('capAlexa');
+  alexa.classList.toggle('err', error);
+  alexa.replaceChildren();
+  el('b', '', alexa, 'ALEXA');
+  const em = el('em', '', alexa);
+  em.style.setProperty('--step', `${Math.round(stepMs)}ms`);
+  words(em, text);
+}
+function addMsg(kind: 'you' | 'alexa', text: string, who: string, error = false, voiced = false) {
   const log = $('log');
   const m = el('div', `msg ${kind}${error ? ' err' : ''}`, log);
   el('span', 'who-l', m, who.toUpperCase());
@@ -152,18 +162,12 @@ function addMsg(kind: 'you' | 'alexa', text: string, who: string, error = false)
       b.classList.add('talking');
       setTimeout(() => b.classList.remove('talking'), 1600);
     }
-  } else {
-    const alexa = $('capAlexa');
-    alexa.classList.toggle('err', error);
-    alexa.replaceChildren();
-    el('b', '', alexa, 'ALEXA');
-    words(el('em', '', alexa), text);
-  }
+  } else caption(voiced ? '…' : text, error); // a voiced reply's words wait for her voice
 }
 let replyTimer: ReturnType<typeof setTimeout> | undefined;
 function alexaSays(text: string, error = false) {
   lastSaid = text;
-  addMsg('alexa', text, 'Alexa', error);
+  addMsg('alexa', text, 'Alexa', error, !!voice && !error);
   const reply = $('reply');
   reply.textContent = text;
   reply.classList.toggle('show', mode === 'inline' || !view);
@@ -193,10 +197,13 @@ async function sayAloud(text: string) {
     level.fftSize = 512;
     src.buffer = buffer;
     src.connect(level).connect(audio.destination);
+    // The subtitle keeps pace with her: each word a little ahead of where she says it.
+    caption(text, false, Math.min(400, Math.max(45, (buffer.duration * 1000 * 0.85) / text.split(/\s+/).length)));
     src.start();
     glow(level, src);
   } catch (e) {
     log('err', `voice: ${(e as Error).message}; the browser's voice speaks instead`);
+    caption(text);
     if (voiceOn) speakAloud(text);
   }
 }
