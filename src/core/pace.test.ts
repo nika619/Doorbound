@@ -88,7 +88,7 @@ test('the running sums rebuild the exact covariance of the remaining steps', () 
   }
 });
 
-test('a late tap clamps, and only the person\'s own normal steps count as readings', () => {
+test('a late or doubled tap says nothing about pace, and only the person\'s own normal steps count', () => {
   let dep = startDeparture(solo, new Map(), 'run', T0 + 60 * MIN, T0, 0.3);
   dep = markDone(dep, 'p', T0 + 3 * 3_600_000)!.dep; // "done" pressed three hours late
   assert.deepEqual(readings(dep.lanes[0]), [], 'three hours for an 8-minute shower is a late tap, not a slow morning');
