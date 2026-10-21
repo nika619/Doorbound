@@ -299,6 +299,38 @@ async function understandRoute(req: IncomingMessage, res: ServerResponse, client
   }
 }
 
+/**
+ * Alexa's voice in the simulator: ElevenLabs, from this machine only and only with ELEVENLABS_API_KEY in .env.
+ * GET names the voice; POST says one reply and returns the MP3. The key never leaves the server.
+ */
+const VOICE = { name: 'Sarah', id: 'EXAVITQu4vr4xnSDxMaL', model: 'eleven_v4_turbo' }; // until Mayank picks from voice-audition/
+async function voiceRoute(req: IncomingMessage, res: ServerResponse, client: string) {
+  if (PUBLIC) return send(res, 404, 'Not found.');
+  if (req.method === 'GET') return json(res, 200, { voice: env.ELEVENLABS_API_KEY ? VOICE.name : null });
+  if (!env.ELEVENLABS_API_KEY) return send(res, 404, 'Not found.');
+  if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'GET, POST' });
+  if (limited(res, limits.board, client)) return;
+  let text: unknown;
+  try {
+    text = (JSON.parse((await readBody(req, 2048)).toString('utf8')) as { text?: unknown }).text;
+  } catch {
+    return send(res, 400, 'Invalid JSON.');
+  }
+  if (typeof text !== 'string' || !text.trim() || text.length > 600) return send(res, 400, 'Bad request.');
+  try {
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE.id}?output_format=mp3_44100_128`, {
+      method: 'POST',
+      headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model_id: VOICE.model }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) return json(res, 502, { error: `ElevenLabs ${r.status}` });
+    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' }).end(Buffer.from(await r.arrayBuffer()));
+  } catch (e) {
+    json(res, 502, { error: (e as Error).message });
+  }
+}
+
 async function doneRoute(req: IncomingMessage, res: ServerResponse, client: string) {
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
   const key = req.headers['x-screen-key'];
@@ -353,6 +385,8 @@ const server = createServer(async (req, res) => {
       case '/':
         // The story page: no data, no tools, the board replaying in the browser. Safe to serve anywhere.
         return pages.site ? pageRoute(req, res, pages.site, client) : send(res, 404, 'Not found.');
+      case '/sim/voice':
+        return await voiceRoute(req, res, client);
       case '/sim/understand':
         return await understandRoute(req, res, client);
       case '/sim':
