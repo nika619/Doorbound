@@ -194,7 +194,7 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
       await c.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
       await c.listTools();
       const say = async (name: string, args: Record<string, unknown> = {}) => ((await c.callTool({ name, arguments: args })) as { content: { text: string }[]; structuredContent?: { people: { name: string }[] } });
-      return { key, say, close: () => c.close() };
+      return { key, refresh_token, say, close: () => c.close() };
     };
     const a = await link();
     assert.match(a.key!, /^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}-[0-9A-Z]$/);
@@ -222,6 +222,20 @@ if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
     const left = (await (await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).json()) as { left: boolean };
     assert.equal(left.left, true);
     assert.equal((await fetch(new URL('/hooks/left?k=k.0123456789abcdef0123456789abcdef.forged', base), { method: 'POST' })).status, 401);
+    // A shared TV link replaced: the old one stops working, the new one works.
+    const boardWith = async (k: string) => (await fetch(new URL('/api/board?since=-1', base), { headers: { 'X-Screen-Key': k } })).status;
+    const fresh = (await a.say('tv_link', { fresh: true })).content[0].text.match(/#k=(\S+)/)![1];
+    assert.deepEqual([await boardWith(tv), await boardWith(fresh)], [401, 200], 'a fresh TV link retires the old one');
+    // Forgotten: every TV link, door link and Alexa sign-in of that household stops working, the partner's too.
+    assert.match((await a.say('forget_household')).content[0].text, /Shall I delete it\?$/);
+    assert.match((await a.say('forget_household', { confirm: true })).content[0].text, /Link Doorbound again/);
+    assert.equal(await boardWith(fresh), 401, "a forgotten household's TV goes blank");
+    assert.equal((await fetch(new URL(`${hook.pathname}${hook.search}`, base), { method: 'POST' })).status, 401, 'and its door link is dead');
+    await assert.rejects(partner.say('departure_status'), "and Alexa's sign-in for it, on every account");
+    const again = await fetch(tokenUrl, { method: 'POST', headers: { ...form, Authorization: basic(process.env.OAUTH_CLIENT_SECRET!) }, body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: a.refresh_token }) });
+    assert.equal(again.status, 400, 'its refresh token is refused');
+    assert.ok((await b.say('departure_status')).content[0].text, 'another household is untouched');
+    step('a fresh TV link retires the old one; a forgotten household loses every link and sign-in, others keep theirs');
     for (const x of [a, partner, b]) await x.close();
     step('a front-door hook ends the morning, not before 15 minutes to leaving time; a forged key is refused');
     step('account linking: a new household with its key, a second account joining it, another household kept apart, its own TV link');
