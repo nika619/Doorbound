@@ -49,9 +49,9 @@ The usual tools are a timer per task or a checklist per person. Neither knows th
 - **Anyone, from anywhere.** "I'm done." "She's still in the shower." "We need to leave ten minutes early." "How are we doing?" "Dad can pack Isha's bag." Set up and run entirely by voice; each sentence is one tool call.
 - **On the Echo Show and beyond.** A small card inside the conversation, and the full board on a tap. For an always-on kitchen display, open the household's private TV link ("Alexa, put the board on the TV") in the Echo Show's browser, a tablet or a TV: it keeps the screen awake while a departure runs and catches up the moment it is shown again. Checked at Echo Show 5, 8, 10, 15 and 21 sizes (`npm run screens`: nothing scrolls, runs off or is set below 12 px). `/board#replay` plays the demo morning in the browser with no server state at all.
 
-![Before the news: the board has already noticed Isha's shower running long and marks her TIGHT](docs/board-tight.jpg)
+![7:26, before anyone says a word: Isha's shower is 2 minutes over, so the board marks her TIGHT at 77%](docs/board-tight.jpg)
 
-![Alexa's inline card inside the conversation: each person's chance at a glance](docs/card.jpg)
+![Alexa's inline card inside the conversation: each person's step and the minutes left on it](docs/card.jpg)
 
 ## The maths, in brief
 
@@ -64,6 +64,8 @@ The demo household (Aarav, Isha, Dad) and its "learned" history are illustrative
 5. **The re-plan is exact:** the cheapest set of allowed changes that gets everyone out at 85%, checked against brute force.
 
 **How we know it is right** (all in `npm test`): calibrated on 40,000 simulated mornings (when it says 80–90%, 84.9% happen; error 0.39%); still honest on mornings that break its assumptions (heavy tails, other shapes, people who underestimate, late taps: 1.1% to 3.1%, 6.7% cautious with late taps); the re-plan equals the brute-force optimum on 1,000 random mornings; every posterior matches numerical integration. Details and the rest in [docs/MATHS.md](docs/MATHS.md).
+
+![The story page: a slow start stretches the rest of Isha's morning, and the chances stay calibrated](docs/story-pace.jpg)
 
 ![The story page: her chance falls, the search tries the gentlest fixes, and the cheapest that works wins](docs/story-replan.jpg)
 
