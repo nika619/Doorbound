@@ -1,6 +1,7 @@
 // The household's state on disk: routines, learned durations and today's departure.
 // Validated on the way in (the file is input too), written atomically, writes coalesced.
 
+import { isZone } from '../core/zone.ts';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as z from 'zod/v4';
@@ -26,6 +27,7 @@ export const stepSchema = z.object({
 });
 export const householdSchema = z.object({
   people: z.array(z.object({ id, name, steps: z.array(stepSchema).max(LIMITS.steps), wakeSec: z.number().int().min(60).max(3600).optional() })).max(LIMITS.people),
+  timeZone: z.string().refine(isZone).optional(),
 });
 
 const ms = z.number().int().nonnegative();

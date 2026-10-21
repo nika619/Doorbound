@@ -106,6 +106,25 @@ test('a departure that crosses midnight is tonight, not this morning', async () 
   assert.equal(await text('23:30'), '23:30 has already passed today. Say a later time.');
 });
 
+test("times are on the family's clock, not the server's", async () => {
+  const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
+  store.household = { ...household, timeZone: 'America/New_York' };
+  const now = Date.UTC(2026, 9, 15, 11, 12); // 7:12 am in New York, whatever zone this machine is in
+  const server = buildServer({ store, audit: new Audit(await mkdtemp(join(tmpdir(), 'audit-'))), client: 'test', boardHtml: () => '<html></html>', now: () => now, clockRate: 1 });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(b);
+  const client = new Client({ name: 'alexa', version: '1' });
+  await client.connect(a);
+  await client.listTools();
+  const call = async (name: string, args: Record<string, unknown>) => ((await client.callTool({ name, arguments: args })).content as { text: string }[])[0].text;
+  assert.match(await call('start_departure', { leaveAt: '07:49' }), /Leave at 7:49, in 37 minutes\./);
+  assert.equal(store.departure?.gateMs, Date.UTC(2026, 9, 15, 11, 49));
+  assert.match(await call('set_routine', { person: 'Isha', steps: [{ name: 'Shower', minutes: 8 }], timeZone: 'Mars/Olympus' }), /not a time zone I know/);
+  await call('set_routine', { person: 'Isha', steps: [{ name: 'Shower', minutes: 8 }], timeZone: 'Asia/Kolkata' });
+  assert.equal(store.household.timeZone, 'Asia/Kolkata', 'the routine tool can set it; rebuilding the household keeps it');
+  await client.close();
+});
+
 test('the demo morning, as Alexa says it', async () => {
   const store = await Store.open(await mkdtemp(join(tmpdir(), 'tools-')));
   store.household = household;

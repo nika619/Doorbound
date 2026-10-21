@@ -37,6 +37,8 @@ export interface PersonDef {
 
 export interface Household {
   people: PersonDef[];
+  /** IANA zone the family lives in; absent means the server's own (zone.ts). */
+  timeZone?: string;
 }
 
 export type TaskState = 'todo' | 'done' | 'later' | 'skipped';

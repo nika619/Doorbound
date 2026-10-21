@@ -3,6 +3,7 @@
 // Inputs are validated by schema; names are matched to the household, never trusted as ids.
 
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
+import { at, isZone, wall } from '../core/zone.ts';
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { kappaOf, readings, reading, recordPace, rhoOf, weekdayMean } from '../core/pace.ts';
@@ -56,6 +57,7 @@ const boardSchema = z.object({
     .optional(),
   insights: z.array(z.object({ person: z.string(), step: z.string(), statedSec: z.number(), learnedSec: z.number() })).optional(),
   ended: z.object({ name: z.string(), gateMs: z.number(), atMs: z.number() }).optional(),
+  timeZone: z.string().optional(),
 });
 type Board = z.infer<typeof boardSchema>;
 
@@ -80,17 +82,19 @@ function board(ctx: Ctx): Board {
     })),
     // For a quarter of an hour after the family leaves, a screen can say how it went.
     ended: !dep && store.ended && ctx.now() - store.ended.atMs < 15 * 60_000 ? store.ended : undefined,
+    timeZone: store.household.timeZone,
   };
 }
 
 // ---------- speech ----------
 
 /** A time as people say it: "7:49" in the morning, "1:30 pm" after noon, "12:15 am" just after midnight. */
-const clock = (ms: number) => {
-  const d = new Date(ms);
-  const h = d.getHours();
-  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}${h === 0 ? ' am' : h >= 12 ? ' pm' : ''}`;
+const clock = (ms: number, tz?: string) => {
+  const { h, mi } = wall(ms, tz);
+  return `${h % 12 || 12}:${String(mi).padStart(2, '0')}${h === 0 ? ' am' : h >= 12 ? ' pm' : ''}`;
 };
+/** The family's time zone: every time read, said or planned is on their clock, not the server's. */
+const zoneOf = (ctx: Ctx) => ctx.store.household.timeZone;
 const minutes = (sec: number) => {
   const m = Math.max(1, Math.round(Math.abs(sec) / 60));
   return `${m} minute${m === 1 ? '' : 's'}`;
@@ -133,11 +137,11 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
     const lead = `Re-routed: ${list(changes)}.`;
     if (dep.reroute.stillLateSec > 0) {
       const late = views.filter((v) => v.pOnTime < TARGET).map(who);
-      return `${lead} Even so, ${list(late)} will be about ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000)} would work.`;
+      return `${lead} Even so, ${list(late)} will be about ${minutes(dep.reroute.stillLateSec)} late. Leaving at ${clock(dep.gateMs + Math.ceil(dep.reroute.stillLateSec / 60) * 60_000, zoneOf(ctx))} would work.`;
     }
     const before = project(dep.reroute.before, now);
     const helped = views.filter((_, i) => before[i].pOnTime < TARGET).map((v) => `${who(v)} is back on track, ${odds(v.pOnTime)}`);
-    return `${lead} Everyone still leaves at ${clock(dep.gateMs)}${helped.length ? `, and ${list(helped)}` : ''}.`;
+    return `${lead} Everyone still leaves at ${clock(dep.gateMs, zoneOf(ctx))}${helped.length ? `, and ${list(helped)}` : ''}.`;
   }
   const behind = views.filter((v) => v.status === 'late' || v.status === 'tight');
   if (behind.length) {
@@ -145,13 +149,13 @@ function summary(ctx: Ctx, dep: Departure, rerouted: boolean): string {
     // What is holding each of them up, when a step has run past its target: the thing to act on.
     const over = (v: LaneView) => (v.waitingFor ? ` ${who(v)} is waiting for the ${v.waitingFor}.` : v.current && now - v.stepEndMs > 60_000 ? ` ${who(v)} is ${minutes((now - v.stepEndMs) / 1000)} over on ${v.current.name.toLowerCase()}.` : '');
     const each = behind.map((v) => `${who(v)} is ${v.status === 'late' ? 'running late' : 'cutting it fine'}, ${odds(v.pOnTime)}.${over(v)}`);
-    return `${each.join(' ')} Leave at ${clock(dep.gateMs)}, or at ${clock(works)} to be sure.`;
+    return `${each.join(' ')} Leave at ${clock(dep.gateMs, zoneOf(ctx))}, or at ${clock(works, zoneOf(ctx))} to be sure.`;
   }
   const going = views.filter((v) => v.status !== 'ready');
-  if (!going.length) return `Everyone is ready. Leave at ${clock(dep.gateMs)}.`;
+  if (!going.length) return `Everyone is ready. Leave at ${clock(dep.gateMs, zoneOf(ctx))}.`;
   const tightest = going.reduce((a, b) => (b.pOnTime < a.pOnTime ? b : a));
   const left = Math.max(0, Math.round((dep.gateMs - now) / 60_000));
-  return `Everyone is on time. Leave at ${clock(dep.gateMs)}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, ${odds(tightest.pOnTime)}.`;
+  return `Everyone is on time. Leave at ${clock(dep.gateMs, zoneOf(ctx))}, in ${minutes(left * 60)}. ${who(tightest)} is the tightest, ${odds(tightest.pOnTime)}.`;
 }
 
 // ---------- helpers ----------
@@ -174,18 +178,17 @@ function findPerson(ctx: Ctx, who: string): PersonDef | undefined {
  * within 12 hours (at 23:40, "leave at 00:10" is in half an hour). A time that passed earlier today stays
  * in the past, so it is refused as passed rather than read as tomorrow.
  */
-function gateFrom(hhmm: string, nowMs: number): number {
+function gateFrom(hhmm: string, nowMs: number, tz?: string): number {
   const [hh, m] = hhmm.split(':').map((x) => parseInt(x, 10));
   const pm = /p\.?m/i.test(hhmm);
   const h = /[ap]\.?m/i.test(hhmm) ? (hh % 12) + (pm ? 12 : 0) : hh; // 12 am is 0:00, 12 pm is noon
-  const d = new Date(nowMs);
-  d.setHours(h, m, 0, 0);
-  if (d.getTime() <= nowMs) {
-    const next = new Date(d);
-    next.setDate(next.getDate() + 1); // by the calendar, so a clock change does not shift it
-    if (next.getTime() - nowMs <= 12 * 3_600_000) return next.getTime();
+  const today = wall(nowMs, tz);
+  const t = at(today.y, today.mo, today.d, h, m, tz);
+  if (t <= nowMs) {
+    const next = at(today.y, today.mo, today.d + 1, h, m, tz); // by the calendar, so a clock change does not shift it
+    if (next - nowMs <= 12 * 3_600_000) return next;
   }
-  return d.getTime();
+  return t;
 }
 
 type Result = { content: { type: 'text'; text: string }[]; structuredContent?: Board; isError?: boolean };
@@ -208,13 +211,13 @@ const whenParams = {
   arriveBy: leaveAt.optional().describe('Where they must be by, for example the school bell from the calendar, "08:15"'),
   travelMinutes: z.number().min(1).max(180).optional().describe('How long the journey takes, for example from traffic, with arriveBy'),
 };
-function leaveTime(nowMs: number, w: { leaveAt?: string; arriveBy?: string; travelMinutes?: number }): { gateMs: number; arrive?: string } | Result {
-  if (w.leaveAt) return { gateMs: gateFrom(w.leaveAt, nowMs) };
+function leaveTime(nowMs: number, w: { leaveAt?: string; arriveBy?: string; travelMinutes?: number }, tz?: string): { gateMs: number; arrive?: string } | Result {
+  if (w.leaveAt) return { gateMs: gateFrom(w.leaveAt, nowMs, tz) };
   if (w.arriveBy && w.travelMinutes) {
-    const by = gateFrom(w.arriveBy, nowMs + w.travelMinutes * 60_000);
+    const by = gateFrom(w.arriveBy, nowMs + w.travelMinutes * 60_000, tz);
     // Journeys vary too: plan for the long end (TARGET) of a log-normal around the time given.
     const journeySec = quantile({ mu: Math.log(w.travelMinutes * 60), sigma: TRAVEL_SIGMA }, TARGET);
-    return { gateMs: by - Math.round(journeySec / 60) * 60_000, arrive: ` to be there by ${clock(by)}, allowing ${minutes(journeySec)} for the ${Math.round(w.travelMinutes)}-minute journey` };
+    return { gateMs: by - Math.round(journeySec / 60) * 60_000, arrive: ` to be there by ${clock(by, tz)}, allowing ${minutes(journeySec)} for the ${Math.round(w.travelMinutes)}-minute journey` };
   }
   return refuse('When do you need to leave? Say a time, or when you need to be there and how long it takes to get there.');
 }
@@ -230,7 +233,7 @@ export function endDeparture(ctx: Ctx, left: boolean, tool = 'end_departure'): s
   commit(ctx, tool, null);
   if (!left) return `${dep.name} cancelled.`;
   const lateMin = Math.round((now - dep.gateMs) / 60_000);
-  return `${dep.name} done${lateMin > 1 ? `, ${minutes(lateMin * 60)} after ${clock(dep.gateMs)}` : ', on time'}. Have a good day.`;
+  return `${dep.name} done${lateMin > 1 ? `, ${minutes(lateMin * 60)} after ${clock(dep.gateMs, zoneOf(ctx))}` : ', on time'}. Have a good day.`;
 }
 
 /**
@@ -304,7 +307,7 @@ export function finishStep(ctx: Ctx, p: PersonDef): { text: string; error?: bool
   if (!r) return { text: `${p.name} has nothing left to do. ${p.name} is ready to go.`, error: true };
   if (r.sample) {
     record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
-    if (task && r.sample.seconds >= 1 && !r.sample.capped) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others, new Date(ctx.now()).getDay());
+    if (task && r.sample.seconds >= 1 && !r.sample.capped) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others, wall(ctx.now(), zoneOf(ctx)).wd);
   }
   const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
   const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
@@ -350,12 +353,14 @@ export function buildServer(ctx: Ctx): McpServer {
           .min(1)
           .max(LIMITS.steps),
         wakeMinutes: z.number().min(1).max(60).optional().describe('How long they take from the alarm to starting the first step, if said. Default 10 minutes.'),
+        timeZone: z.string().max(64).optional().describe("The household's time zone as an IANA name, for example America/New_York, from the device's settings. Every time is read and said in it."),
       }),
       ...out,
       _meta: { ui },
     },
-    async ({ person, steps, wakeMinutes }) => {
+    async ({ person, steps, wakeMinutes, timeZone }) => {
       const hh = ctx.store.household;
+      if (timeZone && !isZone(timeZone)) return refuse(`${timeZone} is not a time zone I know. Use a name like America/New_York.`);
       const existing = findPerson(ctx, person);
       if (!existing && hh.people.length >= LIMITS.people) return refuse(`A household can have up to ${LIMITS.people} people.`);
       const id = existing?.id ?? slug(person);
@@ -377,7 +382,7 @@ export function buildServer(ctx: Ctx): McpServer {
       });
       const wakeSec = wakeMinutes !== undefined ? Math.round(wakeMinutes * 60) : existing?.wakeSec;
       const def: PersonDef = { id, name: existing?.name ?? person.trim(), steps: defs, ...(wakeSec ? { wakeSec } : {}) };
-      ctx.store.household = { people: existing ? hh.people.map((p) => (p.id === id ? def : p)) : [...hh.people, def] };
+      ctx.store.household = { ...hh, ...(timeZone ? { timeZone } : {}), people: existing ? hh.people.map((p) => (p.id === id ? def : p)) : [...hh.people, def] };
       ctx.store.touch();
       void ctx.store.save();
       ctx.audit.record({ tool: 'set_routine', ok: true, person: id, client: ctx.client });
@@ -422,7 +427,7 @@ export function buildServer(ctx: Ctx): McpServer {
         ...(h ? { helpers: [...new Set([...(s.helpers ?? []), h.id])].slice(0, LIMITS.helpers) } : {}),
         ...(uses ? { uses: uses.trim().toLowerCase() } : {}),
       };
-      ctx.store.household = { people: ctx.store.household.people.map((x) => (x.id === p.id ? { ...x, steps: x.steps.map((y) => (y.id === s.id ? next : y)) } : x)) };
+      ctx.store.household = { ...ctx.store.household, people: ctx.store.household.people.map((x) => (x.id === p.id ? { ...x, steps: x.steps.map((y) => (y.id === s.id ? next : y)) } : x)) };
       ctx.store.touch();
       void ctx.store.save();
       ctx.audit.record({ tool: 'allow_change', ok: true, person: p.id, client: ctx.client });
@@ -445,16 +450,16 @@ export function buildServer(ctx: Ctx): McpServer {
       const now = ctx.now();
       const hh = ctx.store.household;
       if (!hh.people.some((p) => p.steps.length)) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
-      const w = leaveTime(now, when);
+      const w = leaveTime(now, when, zoneOf(ctx));
       if ('content' in w) return w;
       const gateMs = w.gateMs;
       if (gateMs <= now) return refuse(`${when.leaveAt ? `${when.leaveAt} has` : 'That leaving time has'} already passed today. Say a later time.`);
       if (gateMs - now > 6 * 3_600_000) return refuse('That is more than six hours away. Start the departure closer to the time.');
       const rho = rhoOf(ctx.store.pace);
-      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho), weekdayMean(ctx.store.pace, rho, new Date(now).getDay()));
+      const dep = startDeparture(hh, ctx.store.history, label ?? 'School run', gateMs, now, rho, kappaOf(ctx.store.pace, rho), weekdayMean(ctx.store.pace, rho, wall(now, zoneOf(ctx)).wd));
       const rerouted = commit(ctx, 'start_departure', dep, undefined, hh.people.map((p) => p.id));
       // An add-on cannot speak first, but Alexa's own reminders can: offer one, five minutes before the door.
-      const remind = gateMs - now > 10 * 60_000 ? ` Shall I set a reminder for ${clock(gateMs - 5 * 60_000)}, five minutes before you leave?` : '';
+      const remind = gateMs - now > 10 * 60_000 ? ` Shall I set a reminder for ${clock(gateMs - 5 * 60_000, zoneOf(ctx))}, five minutes before you leave?` : '';
       return say(ctx, `${dep.name} started${w.arrive ?? ''}. ${summary(ctx, ctx.store.departure!, rerouted)}${remind}`);
     },
   );
@@ -549,10 +554,10 @@ export function buildServer(ctx: Ctx): McpServer {
       const dep = ctx.store.departure;
       if (!dep) return refuse(NO_DEPARTURE);
       if (!at === (shiftMinutes === undefined)) return refuse('Say either a new time, or how many minutes earlier or later.');
-      const gateMs = at ? gateFrom(at, ctx.now()) : dep.gateMs + shiftMinutes! * 60_000;
-      if (gateMs <= ctx.now()) return refuse(`${clock(gateMs)} has already passed. Say a later time.`);
+      const gateMs = at ? gateFrom(at, ctx.now(), zoneOf(ctx)) : dep.gateMs + shiftMinutes! * 60_000;
+      if (gateMs <= ctx.now()) return refuse(`${clock(gateMs, zoneOf(ctx))} has already passed. Say a later time.`);
       const rerouted = commit(ctx, 'change_departure', setGate(dep, gateMs));
-      return say(ctx, `Departure moved to ${clock(gateMs)}. ${summary(ctx, ctx.store.departure!, rerouted)}`);
+      return say(ctx, `Departure moved to ${clock(gateMs, zoneOf(ctx))}. ${summary(ctx, ctx.store.departure!, rerouted)}`);
     },
   );
 
@@ -628,21 +633,20 @@ export function buildServer(ctx: Ctx): McpServer {
     },
     async (when) => {
       const now = ctx.now();
-      const w = leaveTime(now, when);
+      const w = leaveTime(now, when, zoneOf(ctx));
       if ('content' in w) return w;
       let gateMs = w.gateMs;
       if (gateMs <= now) {
-        const d = new Date(gateMs);
-        d.setDate(d.getDate() + 1); // the next time it is that o'clock
-        gateMs = d.getTime();
+        const w = wall(gateMs, zoneOf(ctx));
+        gateMs = at(w.y, w.mo, w.d + 1, w.h, w.mi, zoneOf(ctx)); // the next time it is that o'clock
       }
       const { starts, order } = planStarts(ctx.store.household, ctx.store.history, gateMs, rhoOf(ctx.store.pace));
       if (!starts.length) return refuse("Nobody has a routine yet. Tell me someone's steps first, for example: Isha showers for 8 minutes, then gets dressed.");
-      const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} ${s.startMs <= now + 60_000 ? 'now' : `at ${clock(s.startMs)}`}`); // asked late, an alarm already past means: up now
+      const named = [...starts].sort((a, b) => a.startMs - b.startMs).map((s) => `${ctx.store.household.people.find((p) => p.id === s.personId)!.name} ${s.startMs <= now + 60_000 ? 'now' : `at ${clock(s.startMs, zoneOf(ctx))}`}`); // asked late, an alarm already past means: up now
       const wakes = new Set(ctx.store.household.people.filter((p) => p.steps.length).map((p) => p.wakeSec ?? WAKE_SEC));
       const allow = wakes.size === 1 ? ` That allows ${minutes([...wakes][0])} to get up.` : '';
       const turns = order.map((o) => ` The ${o.space}: ${o.people.map((id) => ctx.store.household.people.find((p) => p.id === id)!.name).join(', then ')}.`).join('');
-      return say(ctx, `To leave at ${clock(gateMs)}${w.arrive ?? ''} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow}${turns} Shall I set them?`);
+      return say(ctx, `To leave at ${clock(gateMs, zoneOf(ctx))}${w.arrive ?? ''} with an 85% chance of everyone making it, set alarms for ${list(named)}.${allow}${turns} Shall I set them?`);
     },
   );
 
@@ -701,7 +705,7 @@ export function buildServer(ctx: Ctx): McpServer {
       }
       s.forgetAskedAt = undefined;
       s.ended = undefined;
-      s.household = { people: [] };
+      s.household = { people: [], timeZone: s.household.timeZone };
       s.history = new Map();
       s.departure = null;
       s.pace = { products: 0, pairs: 0 };
