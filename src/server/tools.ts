@@ -284,6 +284,33 @@ function commit(ctx: Ctx, tool: string, dep: Departure | null, person?: string, 
   return rerouted;
 }
 
+/**
+ * Someone finished their current step: what step_done does once it knows who, and what a TV's remote does.
+ * Learns from it, re-plans if anyone is late, and says what is next. O(P t).
+ */
+export function finishStep(ctx: Ctx, p: PersonDef): { text: string; error?: boolean } {
+  const dep = ctx.store.departure;
+  if (!dep) return { text: NO_DEPARTURE, error: true };
+  const lane = dep.lanes.find((l) => l.personId === p.id);
+  const task = lane?.tasks.find((t) => t.state === 'todo');
+  const finished = task?.name;
+  const earlier = lane ? readings(lane) : [];
+  const others = dep.lanes.flatMap((l) => (l.personId === p.id ? [] : readings(l)));
+  const r = markDone(dep, p.id, ctx.now());
+  if (!r) return { text: `${p.name} has nothing left to do. ${p.name} is ready to go.`, error: true };
+  if (r.sample) {
+    record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
+    if (task && r.sample.seconds >= 1 && !r.sample.capped) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others, new Date(ctx.now()).getDay());
+  }
+  const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
+  const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
+  const pace = !next.current || Math.abs(next.pace) < 0.15 ? '' : next.pace > 0 ? ` ${p.name} is running slow this morning, so I've planned the rest longer.` : ` ${p.name} is quicker than usual this morning.`;
+  const forIt = next.current ? Math.max(60, Math.round((next.stepEndMs - ctx.now()) / 60_000) * 60) : 0;
+  const lead = next.waitingFor ? `${p.name} is next for the ${next.waitingFor}.${pace}` : next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}, about ${minutes(forIt)}.${pace}` : `${p.name} is ready to go.`;
+  const note = r.sample?.capped === 'long' ? ' That took far longer than usual, so I have counted it as a slow morning, not a new normal.' : '';
+  return { text: rerouted ? `${finished} done.${note} ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done.${note} ${lead}` };
+}
+
 // ---------- the server ----------
 
 export function buildServer(ctx: Ctx): McpServer {
@@ -443,24 +470,8 @@ export function buildServer(ctx: Ctx): McpServer {
       if (!dep) return refuse(NO_DEPARTURE);
       const p = whoFor(ctx, dep, person, step);
       if (asked(p)) return p;
-      const lane = dep.lanes.find((l) => l.personId === p.id);
-      const task = lane?.tasks.find((t) => t.state === 'todo');
-      const finished = task?.name;
-      const earlier = lane ? readings(lane) : [];
-      const others = dep.lanes.flatMap((l) => (l.personId === p.id ? [] : readings(l)));
-      const r = markDone(dep, p.id, ctx.now());
-      if (!r) return refuse(`${p.name} has nothing left to do. ${p.name} is ready to go.`);
-      if (r.sample) {
-        record(ctx.store.history, r.sample.personId, r.sample.stepId, r.sample.seconds);
-        if (task && r.sample.seconds >= 1) recordPace(ctx.store.pace, earlier, reading(task, r.sample.seconds), others, new Date(ctx.now()).getDay());
-      }
-      const rerouted = commit(ctx, 'step_done', r.dep, p.id, [p.id]);
-      const next = project(ctx.store.departure!, ctx.now()).find((v) => v.personId === p.id)!;
-      const pace = !next.current || Math.abs(next.pace) < 0.15 ? '' : next.pace > 0 ? ` ${p.name} is running slow this morning, so I've planned the rest longer.` : ` ${p.name} is quicker than usual this morning.`;
-      const forIt = next.current ? Math.max(60, Math.round((next.stepEndMs - ctx.now()) / 60_000) * 60) : 0;
-      const lead = next.waitingFor ? `${p.name} is next for the ${next.waitingFor}.${pace}` : next.current ? `${p.name} is on to ${next.current.name.toLowerCase()}, about ${minutes(forIt)}.${pace}` : `${p.name} is ready to go.`;
-      const note = r.sample?.capped === 'long' ? ' That took far longer than usual, so I have counted it as a slow morning, not a new normal.' : '';
-      return say(ctx, rerouted ? `${finished} done.${note} ${summary(ctx, ctx.store.departure!, true)}` : `${finished} done.${note} ${lead}`);
+      const r = finishStep(ctx, p);
+      return r.error ? refuse(r.text) : say(ctx, r.text);
     },
   );
 
