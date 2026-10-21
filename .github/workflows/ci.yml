@@ -20,6 +20,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      # Keys live only on the developer's computer (.env, ignored by git). Quiet, so a key found is never printed here.
+      - name: No API keys in the repository
+        run: "! git grep -qE 'sk-ant-[A-Za-z0-9_-]{10,}'"
       # No install scripts: nothing in the dependency tree runs or downloads anything.
       - run: npm ci --ignore-scripts
       - run: npm run typecheck

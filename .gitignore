@@ -9,3 +9,4 @@ MASTER_PROMPT.md
 research/
 .claude/
 DEVPOST.md
+.env.*

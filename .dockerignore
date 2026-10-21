@@ -10,3 +10,4 @@ HANDOFF.md
 MASTER_PROMPT.md
 .env
 *.log
+.env.*
