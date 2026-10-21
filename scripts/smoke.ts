@@ -112,6 +112,11 @@ step('/ serves the story page under the same hash-only CSP');
 assert.equal((await fetch(new URL('/nope', base))).status, 404);
 assert.equal(await (await fetch(new URL('/healthz', base))).text(), 'ok');
 step('unknown paths are 404; /healthz answers');
+// The simulator's model: only on the server's own machine (404 beyond it), only with a key there, never on bad input.
+const understand = await fetch(new URL('/sim/understand', base));
+assert.ok(understand.status === 404 || (understand.status === 200 && 'model' in ((await understand.json()) as object)), `GET /sim/understand: ${understand.status}`);
+assert.ok([400, 404].includes((await fetch(new URL('/sim/understand', base), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status));
+step("the simulator's model endpoint stays on this machine and refuses bad input");
 
 // ---------- Alexa+ sign-in (OAuth client credentials), when the server is set up for it ----------
 if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
