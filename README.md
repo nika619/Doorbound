@@ -134,6 +134,7 @@ Without Docker, `npm start` behind any HTTPS proxy or tunnel, with these set:
 | `SCREEN_KEY` | Key a TV presents to read the board: open `https://your-host/board#k=SCREEN_KEY` (the fragment never reaches a server log). |
 | `TRUST_PROXY=1` | Behind a proxy: rate-limit by the forwarded address, send HSTS over HTTPS. |
 | `DATA_DIR` | Where the household file and audit log live (default `data/`). |
+| `TZ` | The family's time zone on a one-household server (IANA, for example `Asia/Kolkata`). Linked households choose theirs on the linking page, and Alexa can set it (`set_routine`'s `timeZone`); every time is read, said and shown on that clock. |
 
 The MCP endpoint is `/mcp`; the board is the resource `ui://doorbound/board.html`.
 

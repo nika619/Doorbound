@@ -20,6 +20,11 @@ Parameters:
     Type: String
     Default: alexa-plus
     Description: The client id Alexa+ is registered with
+  TimeZone:
+    Type: String
+    Default: America/New_York
+    AllowedPattern: '^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$'
+    Description: The family's time zone (IANA, for example Asia/Kolkata); linked households choose their own when they link
   OAuthClientSecret:
     Type: String
     NoEcho: true
@@ -120,8 +125,8 @@ Resources:
             SECRET=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${Secrets} --query SecretString --output text)
             field() { echo "$SECRET" | python3 -c "import json,sys; print(json.load(sys.stdin)['$1'])"; }
             umask 077
-            printf 'DOMAIN=%s\nAUTH_TOKEN=%s\nOAUTH_CLIENT_ID=%s\nOAUTH_CLIENT_SECRET=%s\nOAUTH_SIGNING_KEY=%s\nOAUTH_REDIRECT_URIS=%s\n' \
-              '${DomainName}' "$(field AUTH_TOKEN)" '${OAuthClientId}' "$(field OAUTH_CLIENT_SECRET)" "$(field OAUTH_SIGNING_KEY)" '${RedirectUris}' > .env
+            printf 'DOMAIN=%s\nAUTH_TOKEN=%s\nOAUTH_CLIENT_ID=%s\nOAUTH_CLIENT_SECRET=%s\nOAUTH_SIGNING_KEY=%s\nOAUTH_REDIRECT_URIS=%s\nTZ=%s\n' \
+              '${DomainName}' "$(field AUTH_TOKEN)" '${OAuthClientId}' "$(field OAUTH_CLIENT_SECRET)" "$(field OAUTH_SIGNING_KEY)" '${RedirectUris}' '${TimeZone}' > .env
             docker compose up -d --build
 
   Address:

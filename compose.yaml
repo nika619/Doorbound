@@ -14,6 +14,8 @@ services:
       OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-}
       OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
       OAUTH_SIGNING_KEY: ${OAUTH_SIGNING_KEY:-}
+      # The family's time zone for a one-household server (IANA, e.g. Asia/Kolkata); linked households pick their own.
+      TZ: ${TZ:-}
       OAUTH_REDIRECT_URIS: ${OAUTH_REDIRECT_URIS:-}
       PUBLIC_URL: https://${DOMAIN}
       TRUST_PROXY: "1"
