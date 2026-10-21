@@ -6,6 +6,7 @@
 import { Client, StreamableHTTPClientTransport, type CallToolResult } from '@modelcontextprotocol/client';
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge';
 import { DEMO_MORNING } from '../core/fixtures.ts';
+import { speakAloud } from '../board/voice.ts';
 import { route, type Call } from './router.ts';
 
 const BOARD_URI = 'ui://doorbound/board.html';
@@ -168,13 +169,7 @@ function alexaSays(text: string, error = false) {
   reply.classList.toggle('show', mode === 'inline' || !view);
   clearTimeout(replyTimer);
   replyTimer = setTimeout(() => reply.classList.remove('show'), 7000);
-  if (voiceOn) {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.04;
-    u.voice = speechSynthesis.getVoices().find((v) => /en[-_](US|GB|IN)/i.test(v.lang) && /female|aria|jenny|zira|samantha/i.test(v.name)) ?? null;
-    speechSynthesis.speak(u);
-  }
+  if (voiceOn) speakAloud(text);
 }
 
 // ---------- the board view ----------

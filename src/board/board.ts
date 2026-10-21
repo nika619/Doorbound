@@ -11,6 +11,7 @@ import { DEMO_MORNING, demoStep, household as demoHousehold, learnedHistory } fr
 import { insights } from '../core/learn.ts';
 import { quantile, sum } from '../core/stats.ts';
 import { Bridge, windowPort } from './bridge.ts';
+import { speakAloud } from './voice.ts';
 
 // ---------- data ----------
 
@@ -130,14 +131,11 @@ function clatter(n: number) {
     src.start(a.currentTime + i * 0.02);
   }
 }
-/** Two soft notes, rising: something on the board changed for you. */
 /** A short line said aloud, only with the sound on and where the screen can speak; a chime alone otherwise. */
 function speak(text: string) {
-  if (!live() || !('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(text), { rate: 0.95 }));
+  if (live() && 'speechSynthesis' in window) speakAloud(text);
 }
-
+/** Two soft notes, rising: something on the board changed for you. */
 function chime() {
   const a = live();
   if (!a) return;
