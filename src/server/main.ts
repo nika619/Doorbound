@@ -172,7 +172,8 @@ async function mcpRoute(req: IncomingMessage, res: ServerResponse, client: strin
       own = !household && !linking(OAUTH!);
     }
   }
-  if (limited(res, limits.mcp, client)) return;
+  // Alexa+ calls every household from a few of Amazon's addresses: a linked household gets its own rate.
+  if (limited(res, limits.mcp, household ? `household:${household}` : client)) return;
   let body: unknown;
   try {
     body = JSON.parse((await readBody(req, MAX_BODY)).toString('utf8'));
