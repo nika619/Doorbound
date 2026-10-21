@@ -179,10 +179,11 @@ async function mcpRoute(req: IncomingMessage, res: ServerResponse, client: strin
 async function boardRoute(req: IncomingMessage, res: ServerResponse, url: URL, client: string) {
   if (req.method !== 'GET') return send(res, 405, 'Method not allowed.', { Allow: 'GET' });
   // A screen beyond this machine must present the screen key (or the full token); a linked household's TV, its own key.
+  // A key that is presented must be right even here: a forgotten household's TV goes blank, not onto this machine's.
   const key = req.headers['x-screen-key'];
   const presented = typeof key === 'string' ? key : bearer(req);
   const household = OAUTH && presented ? screenHousehold(OAUTH, presented) : null;
-  if (!household && (PUBLIC || SCREEN_KEY)) {
+  if (!household && (PUBLIC || SCREEN_KEY || typeof key === 'string')) {
     const ok = (SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN));
     if (!ok) return send(res, 401, 'Unauthorized.');
   }
@@ -269,7 +270,7 @@ async function doneRoute(req: IncomingMessage, res: ServerResponse, client: stri
   const key = req.headers['x-screen-key'];
   const presented = typeof key === 'string' ? key : bearer(req);
   const household = OAUTH && presented ? screenHousehold(OAUTH, presented) : null;
-  if (!household && (PUBLIC || SCREEN_KEY) && !((SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN)))) return send(res, 401, 'Unauthorized.');
+  if (!household && (PUBLIC || SCREEN_KEY || typeof key === 'string') && !((SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN)))) return send(res, 401, 'Unauthorized.');
   if (limited(res, limits.board, client)) return;
   let person: unknown;
   try {
