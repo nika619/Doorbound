@@ -399,7 +399,7 @@ function rowFor(id: string, index: number): Row {
     done.setAttribute('aria-label', `${armedNow ? 'Tap again to confirm' : 'Done'}: ${nameOf(id)}`);
   };
   setDone(false);
-  done.hidden = !bridge; // a TV is read-only; voice and the Echo Show's touch screen change things
+  done.hidden = replayMode; // inside Alexa+ a tap; on a TV, the remote (OK twice); the replay is only a replay
   let armed: ReturnType<typeof setTimeout> | undefined;
   done.addEventListener('click', () => {
     // Two taps, so a brush against the screen never marks a step done.
@@ -417,7 +417,7 @@ function rowFor(id: string, index: number): Row {
     armed = undefined;
     done.classList.remove('arm');
     setDone(false);
-    void act('step_done', { person: nameOf(id) });
+    void act('step_done', { person: nameOf(id) }, id);
   });
   r = { li, sr, now, then, status, chance, curve, area, line, gate, tone: '', ready, done, label };
   rows.set(id, r);
@@ -765,8 +765,21 @@ $('sound').addEventListener('click', () => {
 
 // ---------- talking to the server ----------
 
-async function act(tool: string, args: Record<string, unknown>) {
-  if (!bridge) return;
+async function act(tool: string, args: Record<string, unknown>, personId?: string) {
+  if (!bridge) {
+    // A TV or tablet on its private link: the remote's OK says the step is done, nothing more.
+    if (replayMode || tool !== 'step_done' || !personId) return;
+    try {
+      const res = await fetch('/api/done', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(screenKey ? { 'X-Screen-Key': screenKey } : {}) }, body: JSON.stringify({ person: personId }) });
+      const said = ((await res.json()) as { said?: string }).said;
+      if (said) announce(said);
+      if (pending) clearTimeout(pending);
+      void poll();
+    } catch {
+      announce('That did not go through. Try again, or ask Alexa.');
+    }
+    return;
+  }
   try {
     const r = await bridge.callTool(tool, args);
     if (isBoard(r.structuredContent)) adopt(r.structuredContent, performance.now());
@@ -888,6 +901,17 @@ async function poll() {
   inFlight = false;
   pending = setTimeout(poll, failures ? Math.min(10_000, 1000 * 2 ** failures) : 1000);
 }
+// A TV remote's D-pad arrives as arrow keys: up and down move between people's Done buttons; OK presses one.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('button.done')].filter((b) => !b.hidden && !b.disabled);
+  if (!buttons.length) return;
+  e.preventDefault();
+  const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  const down = e.key === 'ArrowDown';
+  buttons[at < 0 ? (down ? 0 : buttons.length - 1) : (at + (down ? 1 : -1) + buttons.length) % buttons.length].focus();
+});
+
 // Back on screen (a tablet woken, a tab brought forward): catch up at once and take the wake lock again.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || replayMode) return;
