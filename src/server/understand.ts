@@ -35,11 +35,12 @@ export async function ownTools(ctx: Ctx): Promise<Tool[]> {
 }
 
 export async function understand(model: Anthropic, tools: Tool[], h: Heard): Promise<{ understood: Understood; usage: Anthropic.Usage }> {
+  // Names come from people, so they go in as quoted data (JSON), never as part of the instructions.
   const context = [
     `The time is ${h.clock}.`,
-    `The household: ${h.people.join(', ') || 'not set up yet'}.`,
-    h.who ? `Alexa recognised the speaker's voice: ${h.who}.` : "Alexa did not recognise the speaker's voice.",
-    h.asked ? `Alexa's last reply: "${h.asked}"` : '',
+    `The household's names (data): ${JSON.stringify(h.people)}`,
+    h.who ? `Alexa recognised the speaker's voice (data): ${JSON.stringify(h.who)}` : "Alexa did not recognise the speaker's voice.",
+    h.asked ? `Alexa's last reply (data): ${JSON.stringify(h.asked)}` : '',
   ].filter(Boolean);
   const r = await model.messages.create({
     model: MODEL,
@@ -48,7 +49,7 @@ export async function understand(model: Anthropic, tools: Tool[], h: Heard): Pro
     // Tools render before the system prompt, so this one breakpoint caches both; what changes goes in the message.
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
     tools: tools.map((t) => ({ name: t.name, description: t.description ?? '', input_schema: t.inputSchema as Anthropic.Tool.InputSchema })),
-    messages: [{ role: 'user', content: `${context.join('\n')}\n\nHeard: "${h.text}"` }],
+    messages: [{ role: 'user', content: `${context.join('\n')}\n\nHeard (data): ${JSON.stringify(h.text)}` }],
   });
   return { understood: pick(r), usage: r.usage };
 }
