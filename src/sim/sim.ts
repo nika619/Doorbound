@@ -169,7 +169,56 @@ function alexaSays(text: string, error = false) {
   reply.classList.toggle('show', mode === 'inline' || !view);
   clearTimeout(replyTimer);
   replyTimer = setTimeout(() => reply.classList.remove('show'), 7000);
-  if (voiceOn) speakAloud(text);
+  void sayAloud(text);
+}
+
+// Alexa's voice: ElevenLabs through this machine's server when it has a key, else the browser's best voice.
+const { voice } = (await fetch('/sim/voice', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {}), () => ({}))) as { voice?: string | null };
+let audio: AudioContext | undefined;
+let playing: AudioBufferSourceNode | undefined;
+async function sayAloud(text: string) {
+  if (!voice) {
+    if (voiceOn) speakAloud(text);
+    return;
+  }
+  try {
+    const r = await fetch('/sim/voice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `status ${r.status}`);
+    audio ??= new AudioContext();
+    await audio.resume();
+    const buffer = await audio.decodeAudioData(await r.arrayBuffer());
+    playing?.stop();
+    const src = (playing = audio.createBufferSource());
+    const level = audio.createAnalyser();
+    level.fftSize = 512;
+    src.buffer = buffer;
+    src.connect(level).connect(audio.destination);
+    src.start();
+    glow(level, src);
+  } catch (e) {
+    log('err', `voice: ${(e as Error).message}; the browser's voice speaks instead`);
+    if (voiceOn) speakAloud(text);
+  }
+}
+/** Alexa's light bar follows how loud she is, frame by frame, and only while she speaks. */
+function glow(level: AnalyserNode, src: AudioBufferSourceNode) {
+  const bar = $('bar');
+  const data = new Uint8Array(level.fftSize);
+  bar.classList.add('speak');
+  src.addEventListener('ended', () => {
+    if (playing !== src) return; // a newer reply took over the bar
+    bar.classList.remove('speak');
+    bar.style.removeProperty('--lv');
+  });
+  const tick = () => {
+    if (playing !== src || !bar.classList.contains('speak')) return;
+    level.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += (v - 128) ** 2;
+    bar.style.setProperty('--lv', Math.min(1, Math.sqrt(sum / data.length) / 40).toFixed(3));
+    requestAnimationFrame(tick);
+  };
+  tick();
 }
 
 // ---------- the board view ----------

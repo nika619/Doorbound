@@ -66,6 +66,8 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 60; pointer-event
 /* Alexa's light: the one place this page uses her colour, with her replies */
 .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, transparent, var(--alexa), transparent); opacity: 0; transition: opacity .3s; }
 .bar.on { opacity: 1; animation: listen 1.2s ease-in-out infinite; }
+/* Alexa speaking: the bar swells with her voice (--lv, 0 to 1, set each frame from the audio) */
+.bar.speak { height: 6px; opacity: calc(.35 + var(--lv, 0) * .65); transform: scaleX(calc(.3 + var(--lv, 0) * .7)); box-shadow: 0 0 28px 4px #31c6f455; transition: none; }
 @keyframes listen { 50% { transform: scaleX(.6); } }
 
 /* ---------- captions: the conversation, as subtitles ---------- */
@@ -141,7 +143,7 @@ pre.insp .out { color: var(--alexa); } pre.insp .in { color: var(--go); } pre.in
   .stage { width: 94vw; }
   .bar-row { flex-wrap: wrap; } .who { border-right: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .view, .home, .msg, .bar.on, .w, .drawer, .who button.talking .av, .timeline .tick { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bar.speak { transform: none; opacity: 1; } .view, .home, .msg, .bar.on, .w, .drawer, .who button.talking .av, .timeline .tick { transition: none; animation: none; } }
 </style>
 </head>
 <body>
