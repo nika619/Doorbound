@@ -34,6 +34,9 @@ jobs:
           mkdir -p _site
           cp dist/site.html _site/index.html
           cp dist/board.html _site/board.html
+          # No server on Pages: "Play the morning" opens the board replaying it in the browser instead of /sim.
+          sed -i 's|href="/sim"|href="board.html#replay"|g' _site/index.html
+          ! grep -q 'href="/sim"' _site/index.html
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
