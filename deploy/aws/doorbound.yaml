@@ -2,7 +2,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   Doorbound for every household: one small Graviton instance running the locked-down container behind
   Caddy (automatic HTTPS), secrets in Secrets Manager, no SSH (Systems Manager instead), encrypted disk
-  with daily snapshots. After the stack is up, point DomainName's A record at the PublicIp output.
+  with hourly snapshots, automatic recovery and reboot on failed health checks, optional email alerts.
+  After the stack is up, point DomainName's A record at the PublicIp output.
 
 Parameters:
   DomainName:
@@ -20,6 +21,11 @@ Parameters:
     Type: String
     Default: alexa-plus
     Description: The client id Alexa+ is registered with
+  AlarmEmail:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    Description: Optional. An address to email when the server fails a health check and is recovered or rebooted
   TimeZone:
     Type: String
     Default: America/New_York
@@ -47,6 +53,9 @@ Parameters:
   LatestAmi:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Conditions:
+  HasAlarmEmail: { 'Fn::Not': [{ 'Fn::Equals': [{ Ref: AlarmEmail }, ''] }] }
 
 Resources:
   Secrets:
@@ -128,6 +137,10 @@ Resources:
             printf 'DOMAIN=%s\nAUTH_TOKEN=%s\nOAUTH_CLIENT_ID=%s\nOAUTH_CLIENT_SECRET=%s\nOAUTH_SIGNING_KEY=%s\nOAUTH_REDIRECT_URIS=%s\nTZ=%s\n' \
               '${DomainName}' "$(field AUTH_TOKEN)" '${OAuthClientId}' "$(field OAUTH_CLIENT_SECRET)" "$(field OAUTH_SIGNING_KEY)" '${RedirectUris}' '${TimeZone}' > .env
             docker compose up -d --build
+            # A hung server stays "unhealthy" without exiting, which restart policies never see: look every minute.
+            printf '[Unit]\nDescription=Restart an unhealthy Doorbound container\n[Service]\nType=oneshot\nExecStart=/bin/sh -c "docker ps -q -f health=unhealthy | xargs -r docker restart"\n' > /etc/systemd/system/doorbound-heal.service
+            printf '[Unit]\nDescription=Check Doorbound every minute\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=1min\n[Install]\nWantedBy=timers.target\n' > /etc/systemd/system/doorbound-heal.timer
+            systemctl daemon-reload && systemctl enable --now doorbound-heal.timer
 
   Address:
     Type: AWS::EC2::EIP
@@ -146,20 +159,66 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole
 
-  DailySnapshots:
+  Snapshots:
     Type: AWS::DLM::LifecyclePolicy
     Properties:
-      Description: Doorbound households - one snapshot a day - a week kept
+      Description: Doorbound households - hourly snapshots for two days and daily ones for a week
       State: ENABLED
       ExecutionRoleArn: { 'Fn::GetAtt': [SnapshotRole, Arn] }
       PolicyDetails:
         ResourceTypes: [VOLUME]
         TargetTags: [{ Key: Backup, Value: doorbound }]
         Schedules:
+          - Name: hourly
+            CreateRule: { Interval: 1, IntervalUnit: HOURS }
+            RetainRule: { Count: 48 }
+            CopyTags: true
           - Name: daily
             CreateRule: { Interval: 24, IntervalUnit: HOURS, Times: ['03:00'] }
             RetainRule: { Count: 7 }
             CopyTags: true
+
+  # Email alerts, only when AlarmEmail is given (AWS asks the address to confirm first).
+  Alerts:
+    Type: AWS::SNS::Topic
+    Condition: HasAlarmEmail
+    Properties:
+      KmsMasterKeyId: alias/aws/sns
+      Subscription: [{ Protocol: email, Endpoint: { Ref: AlarmEmail } }]
+
+  # The physical host fails: AWS moves the instance to healthy hardware with the same disk and address.
+  RecoverOnHostFailure:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Doorbound's host failed its system check; recovering the instance onto healthy hardware
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: { Ref: Server } }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - { 'Fn::Sub': 'arn:aws:automate:${AWS::Region}:ec2:recover' }
+        - { 'Fn::If': [HasAlarmEmail, { Ref: Alerts }, { Ref: 'AWS::NoValue' }] }
+
+  # The instance itself stops answering (a hung kernel, memory exhausted): reboot it.
+  RebootWhenStuck:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Doorbound's instance failed its own status check for 3 minutes; rebooting it
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_Instance
+      Dimensions: [{ Name: InstanceId, Value: { Ref: Server } }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - { 'Fn::Sub': 'arn:aws:automate:${AWS::Region}:ec2:reboot' }
+        - { 'Fn::If': [HasAlarmEmail, { Ref: Alerts }, { Ref: 'AWS::NoValue' }] }
 
 Outputs:
   PublicIp:
