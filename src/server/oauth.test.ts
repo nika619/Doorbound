@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { accessOf, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, newHouseholdKey, redirectWith, resourceOf, screenHousehold, screenKey, TOKEN_TTL_SEC, USER_SCOPE, verifyAccessToken, type AuthRequest, type OAuthConfig } from './oauth.ts';
+import { accessOf, hookHousehold, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, newHouseholdKey, redirectWith, resourceOf, screenHousehold, screenKey, TOKEN_TTL_SEC, USER_SCOPE, verifyAccessToken, type AuthRequest, type OAuthConfig } from './oauth.ts';
 
 const c: OAuthConfig = { clientId: 'alexa-plus', clientSecret: 's'.repeat(40), signingKey: 'k'.repeat(40), publicUrl: 'https://doorbound.example.com' };
 const NOW = 1_800_000_000;
@@ -78,7 +78,7 @@ test('account linking: code with PKCE in, a token for that household and a refre
   const r = issueToken(linked, new URLSearchParams({ grant_type: 'authorization_code', code: fresh, redirect_uri: req.redirectUri, code_verifier: verifier }), basic('alexa-plus', c.clientSecret), NOW + 5, spent);
   assert.equal(r.status, 200);
   assert.equal(r.body.scope, USER_SCOPE);
-  assert.deepEqual(accessOf(linked, String(r.body.access_token), NOW + 10), { scope: USER_SCOPE, household: hh });
+  assert.deepEqual(accessOf(linked, String(r.body.access_token), NOW + 10), { scope: USER_SCOPE, household: hh, iat: NOW + 5 }); // issued at NOW + 5
   const again = issueToken(linked, new URLSearchParams({ grant_type: 'authorization_code', code: fresh, redirect_uri: req.redirectUri, code_verifier: verifier }), basic('alexa-plus', c.clientSecret), NOW + 6, spent);
   assert.equal(again.body.error, 'invalid_grant', 'a code works once');
   const late = issueCode(linked, req, hh, NOW);
@@ -114,7 +114,10 @@ test('household keys: random, forgiving to type, never stored; TV keys verify wi
   assert.equal(householdOf(k.replace(/0/g, 'O')), householdOf(k), 'O reads as 0');
   assert.equal(householdOf('not a key'), null);
   const hh = householdOf(k)!;
-  assert.equal(screenHousehold(linked, screenKey(linked, hh)), hh);
+  assert.deepEqual(screenHousehold(linked, screenKey(linked, hh)), { household: hh, gen: 0 });
+  assert.deepEqual(screenHousehold(linked, screenKey(linked, hh, 3)), { household: hh, gen: 3 }, 'the generation is signed: the caller compares it with the household');
+  assert.equal(screenHousehold(linked, screenKey(linked, hh, 3).replace(`.${3}.`, '.4.')), null, 'a generation cannot be edited');
+  assert.equal(hookHousehold(linked, screenKey(linked, hh)), null, 'a TV link is not a door key');
   assert.equal(screenHousehold(linked, `h.${hh}.forged`), null);
   assert.equal(screenHousehold({ ...linked, signingKey: 'x'.repeat(40) }, screenKey(linked, hh)), null, 'a new signing key revokes TV links too');
 });

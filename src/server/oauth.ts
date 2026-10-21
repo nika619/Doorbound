@@ -103,18 +103,26 @@ export interface Access {
   scope: string;
   /** The linked household; absent for Alexa's own service token. */
   household?: string;
+  /** When it was issued (Unix seconds). */
+  iat: number;
 }
 
 /** A Bearer token this server issued, for this server, not expired. Constant time on the signature. */
 export function accessOf(c: OAuthConfig, token: string | undefined, nowSec: number): Access | null {
   const claims = unseal(c, 'db1', token, nowSec);
   if (!claims || typeof claims.scope !== 'string') return null;
-  return typeof claims.sub === 'string' ? { scope: claims.scope, household: claims.sub } : { scope: claims.scope };
+  const iat = typeof claims.iat === 'number' ? claims.iat : 0;
+  return typeof claims.sub === 'string' ? { scope: claims.scope, household: claims.sub, iat } : { scope: claims.scope, iat };
+}
+/** A refresh token's household and when it was issued, so a forgotten household's can be refused. */
+export function refreshOf(c: OAuthConfig, token: string | undefined, nowSec: number): { household: string; iat: number } | null {
+  const claims = unseal(c, 'dbr', token, nowSec);
+  return claims && typeof claims.sub === 'string' ? { household: claims.sub, iat: typeof claims.iat === 'number' ? claims.iat : 0 } : null;
 }
 export const verifyAccessToken = (c: OAuthConfig, token: string | undefined, nowSec: number) => accessOf(c, token, nowSec) !== null;
 
 const accessToken = (c: OAuthConfig, scope: string, nowSec: number, household?: string) =>
-  seal(c, 'db1', { aud: resourceOf(c), scope, exp: Math.floor(nowSec) + TOKEN_TTL_SEC, ...(household ? { sub: household } : {}) });
+  seal(c, 'db1', { aud: resourceOf(c), scope, iat: Math.floor(nowSec), exp: Math.floor(nowSec) + TOKEN_TTL_SEC, ...(household ? { sub: household } : {}) });
 
 // ---------- the authorization request (account linking) ----------
 
@@ -210,7 +218,7 @@ export function issueToken(c: OAuthConfig, form: URLSearchParams, authorization:
       token_type: 'Bearer',
       expires_in: TOKEN_TTL_SEC,
       scope: USER_SCOPE,
-      refresh_token: seal(c, 'dbr', { aud: resourceOf(c), sub: household, exp: Math.floor(nowSec) + REFRESH_TTL_SEC }),
+      refresh_token: seal(c, 'dbr', { aud: resourceOf(c), sub: household, iat: Math.floor(nowSec), exp: Math.floor(nowSec) + REFRESH_TTL_SEC }),
     },
   });
 
@@ -240,16 +248,18 @@ export function issueToken(c: OAuthConfig, form: URLSearchParams, authorization:
   return error(400, 'unsupported_grant_type', linking(c) ? 'Use client_credentials, authorization_code or refresh_token.' : 'Only client_credentials is supported.');
 }
 
-/** A household's private door-hook key ("we've left" from a door sensor), signed like its TV key but never interchangeable with it. */
-export const hookKey = (c: OAuthConfig, household: string) => `k.${household}.${createHmac('sha256', keyOf(c)).update(`hook.${household}`).digest('base64url')}`;
-export function hookHousehold(c: OAuthConfig, key: string): string | null {
-  const m = /^k\.([0-9a-f]{32})\./.exec(key);
-  return m && tokenMatches(key, hookKey(c, m[1])) ? m[1] : null;
+/**
+ * A household's private keys: the household, a generation and a signature, so the server stores only the
+ * generation. A TV link (h) and a door-hook key (k) are never interchangeable. Bumping the household's
+ * generation retires every link handed out before; the caller checks it against the household's store.
+ */
+const linkKey = (c: OAuthConfig, kind: 'h' | 'k', household: string, gen: number) =>
+  `${kind}.${household}.${gen}.${createHmac('sha256', keyOf(c)).update(`${kind === 'h' ? 'screen' : 'hook'}.${household}.${gen}`).digest('base64url')}`;
+function linkOf(c: OAuthConfig, kind: 'h' | 'k', key: string): { household: string; gen: number } | null {
+  const m = new RegExp(`^${kind}\\.([0-9a-f]{32})\\.(\\d{1,9})\\.`).exec(key);
+  return m && tokenMatches(key, linkKey(c, kind, m[1], Number(m[2]))) ? { household: m[1], gen: Number(m[2]) } : null;
 }
-
-/** A household's private TV link key: the household and a signature, so the server needs to store nothing. */
-export const screenKey = (c: OAuthConfig, household: string) => `h.${household}.${createHmac('sha256', keyOf(c)).update(`screen.${household}`).digest('base64url')}`;
-export function screenHousehold(c: OAuthConfig, key: string): string | null {
-  const m = /^h\.([0-9a-f]{32})\./.exec(key);
-  return m && tokenMatches(key, screenKey(c, m[1])) ? m[1] : null;
-}
+export const hookKey = (c: OAuthConfig, household: string, gen = 0) => linkKey(c, 'k', household, gen);
+export const hookHousehold = (c: OAuthConfig, key: string) => linkOf(c, 'k', key);
+export const screenKey = (c: OAuthConfig, household: string, gen = 0) => linkKey(c, 'h', household, gen);
+export const screenHousehold = (c: OAuthConfig, key: string) => linkOf(c, 'h', key);

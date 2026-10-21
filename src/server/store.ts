@@ -67,6 +67,8 @@ const fileSchema = z.object({
   /** Added after version 2 shipped, so optional: an older file starts from the prior. */
   pace: z.object({ products: z.number().finite(), pairs: z.number().nonnegative().finite(), crossProducts: z.number().finite().optional(), crossPairs: z.number().nonnegative().finite().optional(), weekday: z.array(z.tuple([z.number().finite(), z.number().nonnegative().finite()])).length(7).optional() }).optional(),
   scores: z.array(z.tuple([z.number().min(0).max(1), z.union([z.literal(0), z.literal(1)])])).max(SCORES_KEPT).optional(),
+  keyGen: z.number().int().nonnegative().optional(),
+  revokedBefore: z.number().int().nonnegative().optional(),
 });
 
 export class Store {
@@ -79,6 +81,10 @@ export class Store {
   scores: Score[] = [];
   /** The morning the family last left on, for a screen's closing card. Memory only: a restart forgets it. */
   ended?: { name: string; gateMs: number; atMs: number };
+  /** Which TV and door links work: bumping it retires every one handed out before. */
+  keyGen = 0;
+  /** Alexa sign-ins issued at or before this second (Unix time) no longer work: set when a household is forgotten. */
+  revokedBefore = 0;
   /** When the "delete everything?" warning was last spoken (real time): a yes counts only shortly after it. */
   forgetAskedAt?: number;
   /** Changes on every edit; starts from the clock so it never repeats across restarts. Screens compare it to skip work. */
@@ -111,6 +117,8 @@ export class Store {
     store.departure = parsed.data.departure as Departure | null;
     if (parsed.data.pace) store.pace = parsed.data.pace;
     if (parsed.data.scores) store.scores = parsed.data.scores as Score[];
+    store.keyGen = parsed.data.keyGen ?? 0;
+    store.revokedBefore = parsed.data.revokedBefore ?? 0;
     return store;
   }
 
@@ -127,7 +135,7 @@ export class Store {
     this.writing = (async () => {
       do {
         this.again = false;
-        const body = JSON.stringify({ version: 2, household: this.household, history: [...this.history], departure: this.departure, pace: this.pace, scores: this.scores });
+        const body = JSON.stringify({ version: 2, household: this.household, history: [...this.history], departure: this.departure, pace: this.pace, scores: this.scores, keyGen: this.keyGen, revokedBefore: this.revokedBefore });
         const tmp = `${this.file}.tmp`;
         await writeFile(tmp, body, { mode: 0o600 });
         await rename(tmp, this.file);
