@@ -693,8 +693,14 @@ export function buildServer(ctx: Ctx): McpServer {
       _meta: { ui },
     },
     async ({ confirm }) => {
-      if (!confirm) return say(ctx, "That deletes everyone's routines, every learned time and the score kept for this household, and it cannot be undone. Shall I delete it?");
       const s = ctx.store;
+      // The yes must answer the warning, said in the last two minutes: a model cannot skip straight to it.
+      if (!confirm || !s.forgetAskedAt || Date.now() - s.forgetAskedAt > 120_000) {
+        s.forgetAskedAt = Date.now();
+        return say(ctx, "That deletes everyone's routines, every learned time and the score kept for this household, and it cannot be undone. Shall I delete it?");
+      }
+      s.forgetAskedAt = undefined;
+      s.ended = undefined;
       s.household = { people: [] };
       s.history = new Map();
       s.departure = null;

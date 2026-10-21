@@ -61,6 +61,9 @@ test('a household can be forgotten by voice, only after a yes, and its audit tra
   await client.listTools();
   const text = async (name: string, args: Record<string, unknown> = {}) => ((await client.callTool({ name, arguments: args })).content as { text: string }[])[0].text;
   await text('set_routine', { person: 'Isha', steps: [{ name: 'Shower', minutes: 8 }] });
+  // A model that fills in confirm: true before anyone heard the warning gets the warning, not a deletion.
+  assert.match(await text('forget_household', { confirm: true }), /cannot be undone\. Shall I delete it\?$/);
+  assert.equal(store.household.people.length, 3, 'a yes nobody was asked for deletes nothing');
   assert.match(await text('forget_household'), /cannot be undone\. Shall I delete it\?$/);
   assert.equal(store.household.people.length, 3, 'nothing is deleted without a yes');
   assert.equal(await text('forget_household', { confirm: true }), 'Done. Doorbound has forgotten this household. Tell me a routine to start again.');
