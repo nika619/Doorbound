@@ -11,7 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { household as demoHousehold, learnedHistory } from '../core/fixtures.ts';
 import { Audit } from './audit.ts';
-import { baseHeaders, bearer, BodyTooLarge, clientOf, isLoopback, pageCsp, RateLimiter, readBody, tokenMatches, type PageHashes } from './guard.ts';
+import { baseHeaders, bearer, BodyTooLarge, clientOf, isLoopback, openOnce, pageCsp, RateLimiter, readBody, tokenMatches, type PageHashes } from './guard.ts';
 import { consentPage, keyPage, linkHeaders, page } from './linkpage.ts';
 import { accessOf, refreshOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
 import { RETENTION_DAYS, sweep } from './retention.ts';
@@ -83,17 +83,9 @@ if (env.DEMO_SEED === '1') {
 }
 const audit = new Audit(dataDir);
 // Linked households (account linking): one folder each, named by the fingerprint of the household's key.
-const households = new Map<string, Store>();
-async function householdStore(id: string): Promise<Store> {
-  let s = households.get(id);
-  if (!s) {
-    s = await Store.open(join(dataDir, 'households', id));
-    // shortcut: forgets the first opened, not the least recently used; fine below a thousand active households
-    if (households.size >= 1000) households.delete(households.keys().next().value!);
-    households.set(id, s);
-  }
-  return s;
-}
+// One Store per household, ever (openOnce): up to a thousand kept, none dropped while in use.
+const households = openOnce((id) => Store.open(join(dataDir, 'households', id)), 1000, 60_000);
+const householdStore = households.get;
 const householdExists = (id: string) => households.has(id) || existsSync(join(dataDir, 'households', id, 'household.json'));
 // Households nobody has used for RETENTION days are deleted: checked at start and once a day.
 const retention = Number(env.HOUSEHOLD_RETENTION_DAYS ?? RETENTION_DAYS);
