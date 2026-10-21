@@ -33,7 +33,7 @@ cloudflared tunnel --url http://localhost:3939
 then start Doorbound with that address (here `abc-def.trycloudflare.com`):
 
 ```bash
-OAUTH_CLIENT_ID=alexa-plus OAUTH_CLIENT_SECRET=<the secret> PUBLIC_URL=https://abc-def.trycloudflare.com ALLOWED_HOSTS=abc-def.trycloudflare.com TRUST_PROXY=1 npm start
+OAUTH_CLIENT_ID=alexa-plus OAUTH_CLIENT_SECRET=<the secret> OAUTH_SIGNING_KEY=$(openssl rand -hex 32) PUBLIC_URL=https://abc-def.trycloudflare.com ALLOWED_HOSTS=abc-def.trycloudflare.com TRUST_PROXY=1 npm start
 ```
 
 The server treats itself as public as soon as `ALLOWED_HOSTS` names an outside host: it refuses to start without sign-in set up, and the simulator page is switched off.
@@ -41,7 +41,7 @@ The server treats itself as public as soon as `ALLOWED_HOSTS` names an outside h
 **To keep it running**, use [`compose.yaml`](compose.yaml) on a machine with a domain:
 
 ```bash
-DOMAIN=doorbound.example.com AUTH_TOKEN=$(openssl rand -hex 32) OAUTH_CLIENT_ID=alexa-plus OAUTH_CLIENT_SECRET=<the secret> docker compose up -d
+DOMAIN=doorbound.example.com AUTH_TOKEN=$(openssl rand -hex 32) OAUTH_CLIENT_ID=alexa-plus OAUTH_CLIENT_SECRET=<the secret> OAUTH_SIGNING_KEY=<32+ random characters, kept> docker compose up -d
 ```
 
 ## 2. Create the add-on with Amazon's CLI
