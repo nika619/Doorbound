@@ -40,4 +40,6 @@ try {
   rmSync(data, { recursive: true, force: true });
 }
 console.log(problems.length ? `FAIL  ${problems.join('\n      ')}` : 'ok    the simulator plays a morning and the board shows the household, with no page errors');
+// In GitHub Actions, each problem is also an annotation on the run.
+if (process.env.GITHUB_ACTIONS) for (const p of problems) console.log(`::error title=sim-check::${p.replace(/\r?\n/g, ' ')}`);
 process.exit(problems.length ? 1 : 0);
