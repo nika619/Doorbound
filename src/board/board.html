@@ -158,6 +158,10 @@ button.done:disabled { opacity: .25; cursor: default; }
 @keyframes rise { from { opacity: 0; transform: translateY(18px) scale(.98); } }
 /* rolling digits: each one moves on its own */
 .dg { display: inline-block; white-space: pre; }
+/* a re-route in focus: what it did not touch steps back for a moment */
+.row > *, .lane-name { transition: opacity .5s var(--ease); }
+.band { transition: background .6s, opacity .5s var(--ease); }
+.focus .row:not(.lit) > *, .focus .blk:not(.moved):not(.current), .focus .band, .focus .lane-name { opacity: .28; }
 .w { display: inline-block; animation: blurIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
 @keyframes blurIn { from { opacity: 0; filter: blur(8px); transform: translateY(20px); } }
 

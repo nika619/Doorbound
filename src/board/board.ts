@@ -361,7 +361,13 @@ function choreograph(rr: { changes: Change[] }) {
     const r = rows.get(id);
     if (r) setTimeout(() => sweep(r.li, 'tight'), 180);
   }
+  // A focus pull: for a moment, the people and steps the re-route did not touch step back.
+  for (const [id, r] of rows) r.li.classList.toggle('lit', touched.has(id));
+  $('board').classList.add('focus');
+  clearTimeout(unfocus);
+  unfocus = setTimeout(() => $('board').classList.remove('focus'), 2600);
 }
+let unfocus: ReturnType<typeof setTimeout> | undefined;
 
 /** The tone of a chance: what the curve and the numbers are coloured by. */
 const SEVERITY: Record<string, number> = { done: 0, ok: 1, tight: 2, late: 3 };
