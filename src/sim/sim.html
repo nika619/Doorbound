@@ -58,6 +58,19 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 60; pointer-event
 .home .hint { margin-top: 1vw; font: 500 clamp(14px, 1.3vw, 24px)/1.3 var(--body); }
 .home .hint b { color: var(--amber); font-weight: 500; }
 .home.gone { opacity: 0; pointer-events: none; }
+/* the first thing to do, as plain as a video's play button; gone once anything is said */
+.hero { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; border-radius: 20px; background: radial-gradient(60% 70% at 50% 50%, #090807b3, #09080740 70%, transparent); transition: opacity .45s var(--ease), transform .45s var(--ease); animation: heroIn .9s var(--ease) .3s both; }
+.hero .ring { position: relative; width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; background: var(--amber); box-shadow: 0 18px 60px -12px #ffb547aa; transition: transform .3s var(--ease); }
+.hero .ring::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--amber); animation: halo 2.4s var(--ease) infinite; }
+.hero svg { width: 40px; height: 40px; margin-left: 6px; fill: #120e06; }
+.hero .t { font: 700 clamp(26px, 2.6vw, 44px)/1 var(--cond); letter-spacing: .04em; text-transform: uppercase; }
+.hero .s { font: 500 clamp(13px, 1vw, 17px)/1.3 var(--body); color: var(--dim); }
+.hero:hover .ring, .hero:focus-visible .ring { transform: scale(1.06); }
+.hero:focus-visible { outline: none; } .hero:focus-visible .ring { box-shadow: 0 0 0 4px var(--page), 0 0 0 7px var(--ink); }
+.hero.gone { opacity: 0; transform: scale(.96); pointer-events: none; }
+.stage:has(.hero:not(.gone)) .home .hint { opacity: 0; } /* the hero says it already */
+@keyframes heroIn { from { opacity: 0; transform: scale(.94); filter: blur(8px); } }
+@keyframes halo { from { transform: scale(1); opacity: .6; } to { transform: scale(1.45); opacity: 0; } }
 .view { position: absolute; border: 0; background: transparent; transition-property: left, top, right, bottom, width, height, transform, border-radius, box-shadow; transition-duration: .7s; transition-timing-function: var(--ease); }
 .view.fullscreen { inset: 0; width: 100%; height: 100%; border-radius: 0; }
 .view.inline { left: 50%; bottom: 7%; width: min(560px, 62%); height: 46%; transform: translateX(-50%); border-radius: 14px; box-shadow: 0 20px 60px #000c; }
@@ -143,7 +156,7 @@ pre.insp .out { color: var(--alexa); } pre.insp .in { color: var(--go); } pre.in
   .stage { width: 94vw; }
   .bar-row { flex-wrap: wrap; } .who { border-right: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .bar.speak { transform: none; opacity: 1; } .view, .home, .msg, .bar.on, .w, .drawer, .who button.talking .av, .timeline .tick { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .hero, .hero .ring::after { animation: none; } .bar.speak { transform: none; opacity: 1; } .view, .home, .msg, .bar.on, .w, .drawer, .who button.talking .av, .timeline .tick { transition: none; animation: none; } }
 </style>
 </head>
 <body>
@@ -163,6 +176,7 @@ pre.insp .out { color: var(--alexa); } pre.insp .in { color: var(--go); } pre.in
       <div class="bar" id="bar"></div>
     </div></div>
     <div class="floor" aria-hidden="true"></div>
+    <button class="hero" id="hero" type="button"><span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span><span class="t">Play a morning</span><span class="s">90 seconds · one family · Alexa re-plans live</span></button>
   </section>
 
   <div class="captions" aria-live="polite">

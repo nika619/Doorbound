@@ -276,6 +276,7 @@ async function openView(args: Record<string, unknown>, result: CallToolResult) {
 }
 
 async function hear(utterance: string, who: string | null) {
+  $('hero').classList.add('gone');
   addMsg('you', utterance, who ?? 'Someone');
   await syncClock();
   const call = await understood(utterance, who);
@@ -364,8 +365,10 @@ function timeline(startPerf: number) {
   };
   requestAnimationFrame(step);
 }
+$('hero').addEventListener('click', () => $('play').click());
 $('play').addEventListener('click', async () => {
   const play = $<HTMLButtonElement>('play');
+  $('hero').classList.add('gone');
   play.disabled = true;
   play.textContent = 'Playing…';
   await client.callTool({ name: 'end_departure', arguments: {} }).catch(() => undefined);
