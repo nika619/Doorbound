@@ -140,13 +140,13 @@ The MCP endpoint is `/mcp`; the board is the resource `ui://doorbound/board.html
 npm test
 ```
 
-73 tests: the statistics against simulation, today's pace and the household's, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
+95 tests: the statistics against simulation, today's pace and the household's, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
 
 ```bash
 npm run smoke
 ```
 
-Against a running server (18 checks, 20 with OAuth on): both protocol versions, every tool's schema, the MCP App resource, a morning with a re-route and undo, the HTTP edges (foreign Origin 403, 64 kB cap, hash-only CSP on the board and the story page). It passes against `node dist/server.mjs` started from outside the project, which is what the container runs.
+Against a running server (18 checks; 23 with sign-in and account linking on): both protocol versions, every tool's schema, the MCP App resource, a morning with a re-route and undo, the HTTP edges (foreign Origin 403, 64 kB cap, hash-only CSP on the board and the story page). It passes against `node dist/server.mjs` started from outside the project, which is what the container runs.
 
 ```bash
 npm run conformance
