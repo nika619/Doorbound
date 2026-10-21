@@ -27,6 +27,8 @@ try {
   await page.waitForFunction(() => /started/i.test(document.getElementById('capAlexa')?.textContent ?? ''), null, { timeout: 20_000 });
   await page.waitForSelector('iframe.view', { state: 'visible', timeout: 10_000 });
   if (!(await page.locator('#hero.gone').count())) problems.push('the play button did not get out of the way');
+  // Done with it: two pages polling from one address can trip the server's per-address rate limit.
+  await page.close();
   // The board on its own, live from the server (not the replay).
   const board = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   board.on('pageerror', (e) => problems.push(`board page error: ${e.message}`));
