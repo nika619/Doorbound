@@ -36,6 +36,7 @@ interface Board {
   departure?: Dep | null;
   insights?: { person: string; step: string; statedSec: number; learnedSec: number }[];
   ended?: { name: string; gateMs: number; atMs: number };
+  timeZone?: string;
 }
 const isBoard = (x: unknown): x is Board => !!x && typeof x === 'object' && typeof (x as Board).rev === 'number' && typeof (x as Board).serverNowMs === 'number';
 
@@ -85,9 +86,12 @@ function roll(e: HTMLElement, text: string) {
     }),
   );
 }
+// Times on the family's clock (their time zone, from the server), whatever the screen's own setting.
+let clockFormat: { tz?: string; f: Intl.DateTimeFormat } | undefined;
 const hhmm = (ms: number) => {
-  const d = new Date(ms);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const tz = board?.timeZone;
+  if (!clockFormat || clockFormat.tz !== tz) clockFormat = { tz, f: new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: 'numeric', minute: '2-digit', hourCycle: 'h23' }) };
+  return clockFormat.f.format(ms);
 };
 /** A chance as a person reads it: never a certain 0% or 100% while anything is left to do. */
 const pct = (p: number) => `${Math.min(99, Math.max(1, Math.round(p * 100)))}%`;
