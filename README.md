@@ -169,7 +169,7 @@ src/core/     the model: statistics, learning, the departure, the re-planner (pu
 src/server/   the MCP server, tools, storage, audit log, HTTP guards
 src/board/    the board (an MCP App), and its 2 kB bridge to the host
 src/site/     the story page: scroll scenes drawn from the core, the board replaying inside
-src/sim/      the Alexa+ simulator and the small router that stands in for Alexa's language model
+src/sim/      the Alexa+ simulator, and the phrase list that stands in for Alexa's language model without a key
 scripts/      build (pages and the server bundle), smoke test, benchmark, screenshots, one-turn client
 Dockerfile, compose.yaml   the container and the one-command HTTPS deployment
 ```
@@ -197,7 +197,7 @@ The server refuses to start beyond loopback without a token and a host allow-lis
 - ρ starts at 0.3 by assumption and is learned from the household's own mornings; the step in progress is tied to the pace to first order (the delta method), exact at its start.
 - Fenton–Wilkinson is an approximation; the tests bound its error, they do not make it exact.
 - It learns from the last nine mornings per person and step; one strange morning moves it, a few correct it.
-- The simulator's router is a small rule set standing in for Alexa+'s language model, which in Alexa+ reads the tool descriptions itself.
+- Without a key, the simulator's phrase list stands in for Alexa+'s language model. With `ANTHROPIC_API_KEY` in `.env` (on your machine only; git ignores it), Claude Haiku 5.5 chooses the tool from the tools' own descriptions, as Alexa+ does; `npm run understand-eval` scores both on 42 things a family says.
 - Tested in browsers and the simulator, not on an Echo Show (we have no Amazon devices), and not yet deployed to Alexa+ itself: Amazon's add-on tools were partner-only when we checked ([ALEXA.md](ALEXA.md) has every step ready).
 - The board is designed for households of up to eight.
 - The Docker image and compose file have not been built here (no Docker on the development machine); the bundle they run is tested directly. Memory was measured on Windows.
