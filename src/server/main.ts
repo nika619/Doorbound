@@ -16,7 +16,7 @@ import { consentPage, keyPage, linkHeaders, page } from './linkpage.ts';
 import { accessOf, refreshOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
 import { RETENTION_DAYS, sweep } from './retention.ts';
 import { Store } from './store.ts';
-import { boardOf, buildServer, endDeparture, finishStep, type Ctx } from './tools.ts';
+import { boardOf, buildServer, endDeparture, findPerson, finishStep, type Ctx } from './tools.ts';
 import { MODEL, ownTools, understand, type Heard, type Tool } from './understand.ts';
 import { isZone } from '../core/zone.ts';
 
@@ -289,6 +289,15 @@ async function hookRoute(req: IncomingMessage, res: ServerResponse, url: URL, cl
   const household = await current(OAUTH && presented ? hookHousehold(OAUTH, presented) : null);
   if (!household && !(AUTH_TOKEN && tokenMatches(presented ?? undefined, AUTH_TOKEN)) && (PUBLIC || AUTH_TOKEN || OAUTH)) return send(res, 401, 'Unauthorized.');
   const s = household ? await householdStore(household) : store;
+  if (url.pathname === '/hooks/done') {
+    // An NFC tag on the bathroom door, a smart button, a phone shortcut, a home automation: this person's
+    // current step is done, exactly as if they had said so. No voice assistant needed.
+    const ctx = ctxFor(s, client, household);
+    const p = findPerson(ctx, url.searchParams.get('person') ?? '');
+    if (!p) return json(res, 404, { said: 'Nobody by that name here.' });
+    const r = finishStep(ctx, p);
+    return json(res, r.error ? 409 : 200, { said: r.text });
+  }
   const dep = s.departure;
   if (!dep) return json(res, 200, { left: false, reason: 'no departure running' });
   if (now() < dep.gateMs - 15 * 60_000) return json(res, 202, { left: false, reason: 'too early: before 15 minutes to leaving time' });
@@ -442,6 +451,7 @@ const server = createServer(async (req, res) => {
       case '/api/done':
         return await doneRoute(req, res, client);
       case '/hooks/left':
+      case '/hooks/done':
         return await hookRoute(req, res, url, client);
       case '/oauth/authorize':
         return OAUTH && linking(OAUTH) ? await authorizeRoute(req, res, url, client) : send(res, 404, 'Not found.');

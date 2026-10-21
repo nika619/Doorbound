@@ -170,7 +170,7 @@ const leaveAt = z
 
 const slug = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'x';
 
-function findPerson(ctx: Ctx, who: string): PersonDef | undefined {
+export function findPerson(ctx: Ctx, who: string): PersonDef | undefined {
   const key = who.trim().toLowerCase();
   return ctx.store.household.people.find((p) => p.name.toLowerCase() === key || p.id === slug(who));
 }
@@ -680,7 +680,7 @@ export function buildServer(ctx: Ctx): McpServer {
     'door_link',
     {
       title: 'Let the front door say when you leave',
-      description: "Use when the customer wants a door sensor, smart lock, Ring device or a home routine to tell Doorbound when the household goes out. Returns this household's private web address to send a POST to when the front door opens; from 15 minutes before leaving time, that ends the morning as \"we've left\". Changes nothing.",
+      description: "Use when the customer wants a door sensor, smart lock, Ring device or a home routine to tell Doorbound when the household goes out, or an NFC tag, a smart button or a phone shortcut to say someone finished a step without speaking. Returns this household's private web addresses: one to POST to when the front door opens (from 15 minutes before leaving time, that ends the morning as \"we've left\"), and one that marks a person's current step done. Changes nothing.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
       ...out,
@@ -688,7 +688,7 @@ export function buildServer(ctx: Ctx): McpServer {
     },
     async () =>
       ctx.doorLink
-        ? say(ctx, `Have your door sensor or home routine send a POST to ${ctx.doorLink} when the front door opens. From 15 minutes before leaving time, that counts as everyone out of the door. Keep it private.`)
+        ? say(ctx, `Have your door sensor or home routine send a POST to ${ctx.doorLink} when the front door opens. From 15 minutes before leaving time, that counts as everyone out of the door. And for a tag, a button or a phone shortcut by the bathroom door, a POST to ${ctx.doorLink.replace('/hooks/left', '/hooks/done')}&person=Isha marks Isha's current step done. Keep them private.`)
         : refuse('This Doorbound server has no door link set up. Its owner can use AUTH_TOKEN with POST /hooks/left.'),
   );
 
