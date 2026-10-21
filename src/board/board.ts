@@ -652,7 +652,7 @@ function footer(dep: Dep, late: string[], allReady: boolean) {
   const ins = board?.insights?.[0];
   if (ins) accent($('learned'), `Learned: ${ins.person}'s ${ins.step.toLowerCase()} takes `, `${Math.round(ins.learnedSec / 60)} minutes`, `, not ${Math.round(ins.statedSec / 60)}.`);
   else $('learned').replaceChildren();
-  setText($('tag'), replayMode ? `REPLAY · CLOCK ×${rate}` : rate > 1 ? `DEMO CLOCK ×${rate}` : '');
+  setText($('tag'), replayMode ? `REPLAY · ILLUSTRATIVE DATA · CLOCK ×${rate}` : rate > 1 ? `DEMO CLOCK ×${rate}` : '');
   let card = document.querySelector<HTMLElement>('.reroute');
   const rr = dep.reroute;
   if (rr && rr.changes.length && !allReady) {
