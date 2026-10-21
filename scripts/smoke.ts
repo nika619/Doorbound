@@ -116,7 +116,11 @@ step('unknown paths are 404; /healthz answers');
 const understand = await fetch(new URL('/sim/understand', base));
 assert.ok(understand.status === 404 || (understand.status === 200 && 'model' in ((await understand.json()) as object)), `GET /sim/understand: ${understand.status}`);
 assert.ok([400, 404].includes((await fetch(new URL('/sim/understand', base), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status));
-step("the simulator's model endpoint stays on this machine and refuses bad input");
+// The same for Alexa's voice (ElevenLabs): never beyond this machine, never on bad input.
+const voice = await fetch(new URL('/sim/voice', base));
+assert.ok(voice.status === 404 || (voice.status === 200 && 'voice' in ((await voice.json()) as object)), `GET /sim/voice: ${voice.status}`);
+assert.ok([400, 404].includes((await fetch(new URL('/sim/voice', base), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status));
+step("the simulator's model and voice endpoints stay on this machine and refuse bad input");
 
 // ---------- Alexa+ sign-in (OAuth client credentials), when the server is set up for it ----------
 if (process.env.OAUTH_CLIENT_ID && process.env.OAUTH_CLIENT_SECRET) {
