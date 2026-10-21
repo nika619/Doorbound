@@ -20,7 +20,7 @@ export const household: Household = {
   ],
 };
 /** What a demo line does. */
-export type DemoAct = { start: number } | { done: string } | { still: string; minutes: number } | { status: true };
+export type DemoAct = { start: number } | { done: string } | { still: string; minutes: number } | { status: true } | { left: true };
 /**
  * The demo morning, minute by minute: who says what and what it does. The simulator speaks it, the
  * board's replay acts it out, and the screenshot script plays it against a server. Timings come from
@@ -40,6 +40,7 @@ export const DEMO_MORNING: { at: number; who: string; say: string; act: DemoAct 
   { at: 25.0, who: 'Dad', say: "I'm done.", act: { done: 'dad' } },
   { at: 27.4, who: 'Isha', say: "I'm done.", act: { done: 'isha' } },
   { at: 29.6, who: 'Isha', say: "I'm done.", act: { done: 'isha' } },
+  { at: 37.5, who: 'Mum', say: "Alexa, we're out the door!", act: { left: true } },
 ];
 
 /** One demo line acted out at `at`, as the server would: the change, what it teaches, then a re-plan. */
@@ -50,6 +51,7 @@ export function demoStep(dep: Departure | null, act: DemoAct, at: number, h: His
     if (r?.sample) record(h, r.sample.personId, r.sample.stepId, r.sample.seconds);
     dep = r?.dep ?? dep;
   } else if (dep && 'still' in act) dep = stillGoing(dep, act.still, act.minutes * 60, at) ?? dep;
+  else if ('left' in act) return null; // out of the door: the morning is over
   else return dep; // a question changes nothing
   return dep && reroute(dep, household, h, at);
 }
