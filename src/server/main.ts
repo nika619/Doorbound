@@ -18,6 +18,7 @@ import { RETENTION_DAYS, sweep } from './retention.ts';
 import { Store } from './store.ts';
 import { boardOf, buildServer, endDeparture, finishStep, type Ctx } from './tools.ts';
 import { MODEL, ownTools, understand, type Heard, type Tool } from './understand.ts';
+import { isZone } from '../core/zone.ts';
 
 // From source (src/server/) the project is two levels up; the bundle (dist/server.mjs) sits beside the manifest.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -247,7 +248,10 @@ async function authorizeRoute(req: IncomingMessage, res: ServerResponse, url: UR
   if (q.get('action') === 'new') {
     const key = newHouseholdKey();
     const id = householdOf(key)!;
-    await (await householdStore(id)).save(); // so the key can be joined from another account at once
+    const s = await householdStore(id);
+    const tz = q.get('tz') ?? '';
+    if (isZone(tz)) s.household = { ...s.household, timeZone: tz }; // the family's clock, from the linking page
+    await s.save(); // so the key can be joined from another account at once
     audit.record({ tool: 'link_new_household', ok: true, client });
     return html(200, keyPage(key, redirectWith(r.redirectUri, { code: issueCode(o, r, id, nowSec), state: r.state })));
   }
