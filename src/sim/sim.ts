@@ -6,7 +6,7 @@
 import { Client, StreamableHTTPClientTransport, type CallToolResult } from '@modelcontextprotocol/client';
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge';
 import { DEMO_MORNING } from '../core/fixtures.ts';
-import { route } from './router.ts';
+import { route, type Call } from './router.ts';
 
 const BOARD_URI = 'ui://doorbound/board.html';
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -67,6 +67,28 @@ $('proto').textContent = `MCP ${protocol}`;
 log('in', `initialize → protocol ${protocol}, server ${client.getServerVersion()?.name ?? '?'}`);
 const { tools } = await client.listTools();
 log('in', `tools/list → ${tools.map((t) => t.name).join(', ')}`);
+
+// ---------- understanding: a real model when this machine has a key, else the phrase list ----------
+const { model } = (await fetch('/sim/understand', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {}), () => ({}))) as { model?: string | null };
+const brain = model ? { model } : null;
+const brainChip = $('brain');
+brainChip.hidden = false;
+brainChip.textContent = brain ? brain.model.replace(/-(\d+)-(\d+)$/, ' $1.$2').replaceAll('-', ' ').toUpperCase() : 'PHRASE LIST';
+brainChip.title = brain ? 'A real language model chooses the tool from what was said, as Alexa+ does.' : "A fixed phrase list stands in for Alexa+'s language model. Put ANTHROPIC_API_KEY in .env to use a real one.";
+let lastSaid: string | undefined;
+async function understood(utterance: string, who: string | null): Promise<Call | string | null> {
+  if (!brain) return route(utterance, people, who, clockIn);
+  const clock = new Date(now()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  log('out', `${brain.model} ← "${utterance}"`);
+  const r = (await fetch('/sim/understand', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: utterance, who, people, clock, asked: lastSaid }) }).then(
+    (res) => res.json(),
+    () => ({ error: 'unreachable' }),
+  )) as Call | { say: string } | { error: string };
+  if ('tool' in r) return r;
+  if ('say' in r) return r.say;
+  log('err', `${brain.model}: ${r.error}; the phrase list answers this one`);
+  return route(utterance, people, who, clockIn);
+}
 
 // ---------- household ----------
 let people: string[] = [];
@@ -139,6 +161,7 @@ function addMsg(kind: 'you' | 'alexa', text: string, who: string, error = false)
 }
 let replyTimer: ReturnType<typeof setTimeout> | undefined;
 function alexaSays(text: string, error = false) {
+  lastSaid = text;
   addMsg('alexa', text, 'Alexa', error);
   const reply = $('reply');
   reply.textContent = text;
@@ -211,8 +234,9 @@ async function openView(args: Record<string, unknown>, result: CallToolResult) {
 async function hear(utterance: string, who: string | null) {
   addMsg('you', utterance, who ?? 'Someone');
   await syncClock();
-  const call = route(utterance, people, who, clockIn);
+  const call = await understood(utterance, who);
   if (!call) return alexaSays("Sorry, I can't help with that in Doorbound yet.");
+  if (typeof call === 'string') return alexaSays(call);
   log('out', `tools/call ${call.tool} ${JSON.stringify(call.args)}`);
   const started = performance.now();
   let r: CallToolResult;
