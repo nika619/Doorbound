@@ -373,6 +373,7 @@ function timeline(startPerf: number) {
   requestAnimationFrame(step);
 }
 $('hero').addEventListener('click', () => $('play').click());
+// Both play buttons start disabled in the page: a click before this point would have done nothing.
 $('play').addEventListener('click', async () => {
   const play = $<HTMLButtonElement>('play');
   $('hero').classList.add('gone');
@@ -396,6 +397,7 @@ $('play').addEventListener('click', async () => {
   play.disabled = false;
   play.textContent = 'Play again →';
 });
+for (const id of ['play', 'hero']) $<HTMLButtonElement>(id).disabled = false;
 
 // ---------- the drawer: the whole conversation, and every MCP message ----------
 const drawer = $('drawer');

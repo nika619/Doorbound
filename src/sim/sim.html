@@ -66,6 +66,7 @@ body::after { content: ''; position: fixed; inset: 0; z-index: 60; pointer-event
 .hero .t { font: 700 clamp(26px, 2.6vw, 44px)/1 var(--cond); letter-spacing: .04em; text-transform: uppercase; }
 .hero .s { font: 500 clamp(13px, 1vw, 17px)/1.3 var(--body); color: var(--dim); }
 .hero:hover .ring, .hero:focus-visible .ring { transform: scale(1.06); }
+.hero:disabled { cursor: progress; } .hero:disabled .ring { opacity: .45; } .hero:disabled .ring::after { animation: none; } /* until the simulator is connected */
 .hero:focus-visible { outline: none; } .hero:focus-visible .ring { box-shadow: 0 0 0 4px var(--page), 0 0 0 7px var(--ink); }
 .hero.gone { opacity: 0; transform: scale(.96); pointer-events: none; }
 .stage:has(.hero:not(.gone)) .home .hint { opacity: 0; } /* the hero says it already */
@@ -165,7 +166,7 @@ pre.insp .out { color: var(--alexa); } pre.insp .in { color: var(--go); } pre.in
   <a class="l" href="/">Story</a>
   <span class="chip" id="proto">CONNECTING</span><span class="chip" id="brain" hidden></span><span class="chip" id="clockRate" hidden></span>
   <button class="l" id="drawerBtn" type="button" aria-expanded="false" aria-controls="drawer">Inspector</button>
-  <button class="play" id="play" type="button">Play the morning →</button>
+  <button class="play" id="play" type="button" disabled>Play the morning →</button>
 </nav>
 
 <main class="room">
@@ -176,7 +177,7 @@ pre.insp .out { color: var(--alexa); } pre.insp .in { color: var(--go); } pre.in
       <div class="bar" id="bar"></div>
     </div></div>
     <div class="floor" aria-hidden="true"></div>
-    <button class="hero" id="hero" type="button"><span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span><span class="t">Play a morning</span><span class="s">2 minutes · one family · Alexa re-plans live</span></button>
+    <button class="hero" id="hero" type="button" disabled><span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span><span class="t">Play a morning</span><span class="s">2 minutes · one family · Alexa re-plans live</span></button>
   </section>
 
   <div class="captions" aria-live="polite">
