@@ -13,7 +13,7 @@ import { household as demoHousehold, learnedHistory } from '../core/fixtures.ts'
 import { Audit } from './audit.ts';
 import { baseHeaders, bearer, BodyTooLarge, clientOf, isLoopback, pageCsp, RateLimiter, readBody, tokenMatches, type PageHashes } from './guard.ts';
 import { consentPage, keyPage, linkHeaders, page } from './linkpage.ts';
-import { accessOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
+import { accessOf, refreshOf, hookHousehold, hookKey, authorizationServerMetadata, authorizeRequest, formOk, formToken, householdOf, issueCode, issueToken, linking, newHouseholdKey, protectedResourceMetadata, redirectWith, screenHousehold, screenKey, type OAuthConfig } from './oauth.ts';
 import { RETENTION_DAYS, sweep } from './retention.ts';
 import { Store } from './store.ts';
 import { boardOf, buildServer, endDeparture, finishStep, type Ctx } from './tools.ts';
@@ -109,13 +109,30 @@ const now = DEMO_SPEED === 1 ? Date.now : () => t0 + (Date.now() - t0) * DEMO_SP
 const publicBase = OAUTH?.publicUrl ?? `http://localhost:${PORT}`;
 /** Everything a request's tools see: its household's store, and that household's TV link if there is one. */
 function ctxFor(s: Store, client: string, household: string | null): Ctx {
-  const screenLink = household && OAUTH ? `${publicBase}/board#k=${screenKey(OAUTH, household)}` : SCREEN_KEY ? `${publicBase}/board#k=${SCREEN_KEY}` : undefined;
-  const doorLink = household && OAUTH ? `${publicBase}/hooks/left?k=${hookKey(OAUTH, household)}` : undefined;
   // On a shared server, every audit line says which household it was (its fingerprint, never its key).
   const log = household ? { record: (e: Parameters<Audit['record']>[0]) => audit.record({ ...e, household }) } : audit;
-  return { store: s, audit: log, client, boardHtml: () => pages.board.html, now, clockRate: DEMO_SPEED, screenLink, doorLink };
+  return {
+    store: s,
+    audit: log,
+    client,
+    boardHtml: () => pages.board.html,
+    now,
+    clockRate: DEMO_SPEED,
+    linked: !!household,
+    // Read when asked, so a link replaced during this request is the new one.
+    get screenLink() {
+      return household && OAUTH ? `${publicBase}/board#k=${screenKey(OAUTH, household, s.keyGen)}` : SCREEN_KEY ? `${publicBase}/board#k=${SCREEN_KEY}` : undefined;
+    },
+    get doorLink() {
+      return household && OAUTH ? `${publicBase}/hooks/left?k=${hookKey(OAUTH, household, s.keyGen)}` : undefined;
+    },
+  };
 }
 const requestCtx = new AsyncLocalStorage<Ctx>();
+/** The household a TV or door key opens, while its generation is current: a forgotten household's, or a replaced link, opens nothing. */
+async function current(k: { household: string; gen: number } | null): Promise<string | null> {
+  return k && (await householdStore(k.household)).keyGen === k.gen ? k.household : null;
+}
 
 // Pages are built once (npm run build) and held in memory: serving is a buffer write.
 type Page = { html: string; hashes: PageHashes };
@@ -164,6 +181,7 @@ async function mcpRoute(req: IncomingMessage, res: ServerResponse, client: strin
   // service token on a single-household server, mean the server's own; Alexa's service token on a linking
   // server means nobody's (null): it may list tools, never run one.
   let household: string | null = null;
+  let issued = Infinity;
   let own = !AUTH_TOKEN && !OAUTH;
   if (AUTH_TOKEN || OAUTH) {
     const presented = bearer(req);
@@ -172,6 +190,7 @@ async function mcpRoute(req: IncomingMessage, res: ServerResponse, client: strin
     if (!own && !access) return send(res, 401, 'Unauthorized.', { 'WWW-Authenticate': OAUTH ? `Bearer resource_metadata="${OAUTH.publicUrl}/.well-known/oauth-protected-resource"` : 'Bearer' });
     if (!own) {
       household = access!.household ?? null;
+      issued = access!.iat;
       own = !household && !linking(OAUTH!);
     }
   }
@@ -190,6 +209,8 @@ async function mcpRoute(req: IncomingMessage, res: ServerResponse, client: strin
       return json(res, 200, { jsonrpc: '2.0', id: msg.id ?? null, result: { content: [{ type: 'text', text: 'Link Doorbound to your household first: in the Alexa app, open Doorbound and choose Link account.' }], isError: true } });
   }
   const s = household ? await householdStore(household) : store;
+  // A forgotten household's sign-ins stop working: Alexa will ask to link again.
+  if (household && issued <= s.revokedBefore) return send(res, 401, 'Unauthorized.', { 'WWW-Authenticate': `Bearer error="invalid_token", resource_metadata="${OAUTH!.publicUrl}/.well-known/oauth-protected-resource"` });
   await requestCtx.run(ctxFor(s, client, household), () => mcp(req, res, body));
 }
 
@@ -199,7 +220,7 @@ async function boardRoute(req: IncomingMessage, res: ServerResponse, url: URL, c
   // A key that is presented must be right even here: a forgotten household's TV goes blank, not onto this machine's.
   const key = req.headers['x-screen-key'];
   const presented = typeof key === 'string' ? key : bearer(req);
-  const household = OAUTH && presented ? screenHousehold(OAUTH, presented) : null;
+  const household = await current(OAUTH && presented ? screenHousehold(OAUTH, presented) : null);
   if (!household && (PUBLIC || SCREEN_KEY || typeof key === 'string')) {
     const ok = (SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN));
     if (!ok) return send(res, 401, 'Unauthorized.');
@@ -271,7 +292,7 @@ async function hookRoute(req: IncomingMessage, res: ServerResponse, url: URL, cl
   if (req.method !== 'POST') return send(res, 405, 'Method not allowed.', { Allow: 'POST' });
   if (limited(res, limits.page, client)) return;
   const presented = url.searchParams.get('k') ?? bearer(req);
-  const household = OAUTH && presented ? hookHousehold(OAUTH, presented) : null;
+  const household = await current(OAUTH && presented ? hookHousehold(OAUTH, presented) : null);
   if (!household && !(AUTH_TOKEN && tokenMatches(presented ?? undefined, AUTH_TOKEN)) && (PUBLIC || AUTH_TOKEN || OAUTH)) return send(res, 401, 'Unauthorized.');
   const s = household ? await householdStore(household) : store;
   const dep = s.departure;
@@ -352,7 +373,7 @@ async function doneRoute(req: IncomingMessage, res: ServerResponse, client: stri
   if (notJson(req, res)) return;
   const key = req.headers['x-screen-key'];
   const presented = typeof key === 'string' ? key : bearer(req);
-  const household = OAUTH && presented ? screenHousehold(OAUTH, presented) : null;
+  const household = await current(OAUTH && presented ? screenHousehold(OAUTH, presented) : null);
   if (!household && (PUBLIC || SCREEN_KEY || typeof key === 'string') && !((SCREEN_KEY && tokenMatches(presented, SCREEN_KEY)) || (AUTH_TOKEN && tokenMatches(presented, AUTH_TOKEN)))) return send(res, 401, 'Unauthorized.');
   if (limited(res, limits.board, client)) return;
   let person: unknown;
@@ -380,6 +401,11 @@ async function tokenRoute(req: IncomingMessage, res: ServerResponse, url: URL, c
     form = new URLSearchParams((await readBody(req, 8 * 1024)).toString('utf8'));
   } catch (e) {
     return json(res, e instanceof BodyTooLarge ? 413 : 400, { error: 'invalid_request', error_description: 'Unreadable body.' });
+  }
+  if (form.get('grant_type') === 'refresh_token') {
+    const rt = refreshOf(OAUTH!, form.get('refresh_token') ?? undefined, Date.now() / 1000);
+    if (rt && rt.iat <= (await householdStore(rt.household)).revokedBefore)
+      return json(res, 400, { error: 'invalid_grant', error_description: 'This household was forgotten. Link Doorbound again.' }, { 'Cache-Control': 'no-store' });
   }
   const r = issueToken(OAUTH!, form, req.headers.authorization, Date.now() / 1000);
   if (r.status === 401) limits.tokenFail.take(client, Date.now());

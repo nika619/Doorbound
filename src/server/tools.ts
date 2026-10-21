@@ -30,6 +30,8 @@ export interface Ctx {
   screenLink?: string;
   /** This household's private address for a door sensor or home routine to say "we've left". */
   doorLink?: string;
+  /** A household linked through Alexa (account linking), whose sign-ins forgetting it revokes. */
+  linked?: boolean;
 }
 
 // ---------- the board the screen draws ----------
@@ -655,16 +657,22 @@ export function buildServer(ctx: Ctx): McpServer {
     'tv_link',
     {
       title: 'Put the board on a TV',
-      description: "Use when the customer asks how to show the board on a TV, a tablet or another screen. Returns this household's private link to open in that screen's browser. Changes nothing.",
-      inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      description: "Use when the customer asks how to show the board on a TV, a tablet or another screen, or wants a new link because the old one was shared. Returns this household's private link to open in that screen's browser. With fresh: true, the old TV and door links stop working.",
+      inputSchema: z.object({ fresh: z.boolean().optional().describe('true when the customer wants a new link, so the old one stops working') }),
       ...out,
       _meta: { ui },
     },
-    async () =>
-      ctx.screenLink
-        ? say(ctx, `Open this link in the browser on that screen: ${ctx.screenLink} . Keep it private: anyone with it can see your household's board.`)
-        : refuse('This Doorbound server has no TV link set up. Its owner can set SCREEN_KEY.'),
+    async ({ fresh }) => {
+      if (!ctx.screenLink) return refuse('This Doorbound server has no TV link set up. Its owner can set SCREEN_KEY.');
+      if (fresh && !ctx.linked) return refuse("This server's TV link is set by its owner (SCREEN_KEY); they can change it.");
+      if (fresh) {
+        ctx.store.keyGen++;
+        ctx.store.touch();
+        void ctx.store.save();
+        ctx.audit.record({ tool: 'tv_link', ok: true, client: ctx.client });
+      }
+      return say(ctx, `${fresh ? 'Here is a new link; the old TV and door links no longer work. ' : ''}Open this link in the browser on that screen: ${ctx.screenLink} . Keep it private: anyone with it can see your household's board.`);
+    },
   );
 
   registerAppTool(
@@ -705,6 +713,9 @@ export function buildServer(ctx: Ctx): McpServer {
       }
       s.forgetAskedAt = undefined;
       s.ended = undefined;
+      // Every TV link, door link and Alexa sign-in handed out for this household stops working.
+      s.keyGen++;
+      s.revokedBefore = Math.floor(Date.now() / 1000);
       s.household = { people: [], timeZone: s.household.timeZone };
       s.history = new Map();
       s.departure = null;
@@ -713,7 +724,7 @@ export function buildServer(ctx: Ctx): McpServer {
       s.touch();
       void s.save();
       ctx.audit.record({ tool: 'forget_household', ok: true, client: ctx.client });
-      return say(ctx, 'Done. Doorbound has forgotten this household. Tell me a routine to start again.');
+      return say(ctx, `Done. Doorbound has forgotten this household${ctx.linked ? ', and every TV and door link. Link Doorbound again in the Alexa app to start over.' : '. Tell me a routine to start again.'}`);
     },
   );
 
