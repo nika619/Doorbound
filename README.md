@@ -21,7 +21,7 @@ Built for the Build, Ship, Shape: Amazon Developer Hackathon, Alexa+ track: an M
 - **An exact re-plan:** the gentlest changes the household allowed, checked against brute force on 1,000 mornings.
 - **Real mornings:** one bathroom, slow starts, weekday habits, a family that always underestimates, alarms for tomorrow, the journey to school, the front door saying when you left.
 - **One add-on for every household:** Alexa+ account linking (OAuth with PKCE), each household kept apart, deletion by voice, idle data removed.
-- **Built to be checked:** 95 tests, an end-to-end smoke test, the official MCP conformance suite and an Echo Show screen check, all in CI with the locked-down container and the AWS template.
+- **Built to be checked:** 100 tests, an end-to-end smoke test, the official MCP conformance suite and an Echo Show screen check, all in CI with the locked-down container and the AWS template.
 
 **Try it in a minute:**
 
@@ -145,7 +145,7 @@ The MCP endpoint is `/mcp`; the board is the resource `ui://doorbound/board.html
 npm test
 ```
 
-95 tests: the statistics against simulation, today's pace and the household's, the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
+100 tests: the statistics against simulation, today's pace and the household's, time zones (a New York family on a server elsewhere, the spring-forward gap), the departure model, the re-planner (brute force and properties), learning, storage, the security guards, the speech of a whole morning through the real tools, and our 2 kB MCP Apps bridge against the official host-side `AppBridge`.
 
 ```bash
 npm run smoke
@@ -163,7 +163,7 @@ The official MCP conformance suite (`@modelcontextprotocol/conformance` 0.1.16) 
 npm run typecheck
 ```
 
-On GitHub, CI runs all of this on every push (Node 22 and 24), runs the conformance suite, then builds the Docker image, checks it refuses to start without a token, and runs the smoke test, OAuth sign-in included, against the container running read-only with every capability dropped. Dependabot checks the dependencies weekly.
+On GitHub, CI runs all of this on every push (Node 22 and 24), runs the conformance suite, then builds the Docker image, checks it refuses to start without a token, and runs the smoke test, OAuth sign-in included, against the container running read-only with every capability dropped. A browser job checks the board at every Echo Show size and plays the simulator in Chromium; `cfn-lint` checks the AWS template; a key scan fails the build if an API key ever lands in the repository. Dependabot checks the dependencies weekly.
 
 ## How it is built
 
@@ -200,10 +200,11 @@ The server refuses to start beyond loopback without a token and a host allow-lis
 - ρ starts at 0.3 by assumption and is learned from the household's own mornings; the step in progress is tied to the pace to first order (the delta method), exact at its start.
 - Fenton–Wilkinson is an approximation; the tests bound its error, they do not make it exact.
 - It learns from the last nine mornings per person and step; one strange morning moves it, a few correct it.
-- Without a key, the simulator's phrase list stands in for Alexa+'s language model. With `ANTHROPIC_API_KEY` in `.env` (on your machine only; git ignores it), Claude Haiku 5.5 chooses the tool from the tools' own descriptions, as Alexa+ does; `npm run understand-eval` scores both on 42 things a family says.
+- Without a key, the simulator's phrase list stands in for Alexa+'s language model. With `ANTHROPIC_API_KEY` in `.env` (on your machine only; git ignores it), Claude Haiku 5.5 chooses the tool from the tools' own descriptions, as Alexa+ does; `npm run understand-eval` scores both on 42 things a family says (it needs a key; we did not run it for this submission).
 - Tested in browsers and the simulator, not on an Echo Show (we have no Amazon devices), and not yet deployed to Alexa+ itself: Amazon's add-on tools were partner-only when we checked ([ALEXA.md](ALEXA.md) has every step ready).
 - The board is designed for households of up to eight.
-- The Docker image and compose file have not been built here (no Docker on the development machine); the bundle they run is tested directly. Memory was measured on Windows.
+- Every number about accuracy comes from simulated mornings: no family has used it for real yet ([PILOT.md](PILOT.md) shows how, with a laptop and no Alexa).
+- The Docker image is built and tested in CI, not on the development machine (no Docker there); the AWS template passes `cfn-lint` but we have not deployed it. Memory was measured on Windows.
 
 ## License
 
