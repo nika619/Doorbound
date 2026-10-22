@@ -498,11 +498,9 @@ const cTagW = words(cTag, 'Every morning, on time.');
 const cLinks = el('div', 'abs', closeL, undefined, 'left:174px;top:720px;font-size:32px;line-height:1.6');
 cLinks.innerHTML = 'github.com/nika619/Doorbound <span style="color:var(--dim)">&nbsp;·&nbsp; nika619.github.io/Doorbound</span>';
 cLinks.style.cssText = 'left:0;right:0;top:900px;font-size:32px;text-align:center';
-const cCred = el('div', 'abs label', closeL, 'ALEXA+ TRACK · MODEL CONTEXT PROTOCOL · VOICES BY ELEVENLABS (ELEVENLABS.IO)', 'left:0;right:0;top:972px;font-size:18px;text-align:center');
 function drawClose(t) {
   reveal(cTagW, t, W('c1', 'every') - 0.05, 0.1);
   reveal([cLinks], t, L.c1.end + 0.1);
-  reveal([cCred], t, L.c1.end + 0.5);
 }
 
 // ---------- captions: every word as it is said ----------
