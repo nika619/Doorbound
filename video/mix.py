@@ -1,6 +1,6 @@
 """The film's timeline and its sound, from the voice lines: when each line and word is said (timeline.json,
 which drives the picture) and the whole mix (mix.wav): voices, a synthesized score that ducks under them,
-a clock tick for the time pressure, flap clatter and whooshes on the cuts. No samples, no third-party music.
+a clock tick for the time pressure, flap clatter on the cuts. No samples, no third-party music.
   ~/.claude/venvs/motion-audio/Scripts/python video/mix.py
 """
 import json
@@ -73,7 +73,7 @@ tick = np.zeros(n)
 click = tone(2600, 0.03, 0.001, 0.008) + rng.normal(0, 1, int(0.03 * SR)) * np.exp(-np.arange(int(0.03 * SR)) / SR / 0.004) * 0.3
 for b in np.arange(0.4, at['s1']['start'], 60 / 90):
     place(tick, click, b, 0.9 if int(round(b / (60 / 90))) % 2 == 0 else 0.55)
-# Flaps: a burst of short clicks; whooshes: shaped noise swelling into a cut.
+# Flaps: a burst of short clicks. No whooshes: the cuts land on the flaps and chimes alone (Mayank found them grating).
 def clatter(count, spread):
     out = np.zeros(int((spread + 0.05) * SR))
     for c in rng.uniform(0, spread, count):
@@ -81,20 +81,12 @@ def clatter(count, spread):
         burst = rng.normal(0, 1, 400) * np.exp(-np.arange(400) / 60)
         out[i:i + 400] += burst[: len(out) - i]
     return out
-def whoosh(dur):
-    tt = np.arange(int(dur * SR)) / SR
-    noise = np.convolve(rng.normal(0, 1, len(tt)), np.ones(24) / 24, 'same')
-    return noise * np.sin(np.pi * tt / dur) ** 3
 sfx = np.zeros(n)
 place(sfx, clatter(60, 1.1), 0.25, 0.25)                          # the 7:52 flaps in
-place(sfx, whoosh(1.2), at['s1']['start'] - 0.9, 0.5)               # into the reveal
 place(sfx, clatter(40, 0.8), at['s1']['start'] + 0.4, 0.2)          # the wordmark flaps
-place(sfx, whoosh(0.9), at['d9']['start'] - 0.6, 0.35)              # the re-route
 place(sfx, clatter(50, 0.9), at['d9']['start'] + 0.1, 0.22)
 for f, d in ((659.25, 0), (987.77, 0.14)):                          # the board's own chime, at the finale
     place(sfx, tone(f, 1.2, 0.01, 0.5), at['d14']['start'] + d, 0.18)
-place(sfx, whoosh(1.4), at['b1']['start'] - 1.0, 0.4)               # into how it is built
-place(sfx, whoosh(1.4), at['c1']['start'] - 1.0, 0.45)              # into the close
 for f, d in ((440.0, 0), (659.25, 0.18), (880.0, 0.36)):            # the last chord rings out
     place(sfx, tone(f, 2.6, 0.02, 1.2), at['c1']['start'] + 0.2 + d, 0.12)
 
