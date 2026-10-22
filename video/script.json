@@ -1,0 +1,36 @@
+{
+  "voices": {
+    "narrator": { "name": "Eric", "id": "cjVigY5qzO86Huf0OWal" },
+    "alexa": { "name": "Sarah", "id": "EXAVITQu4vr4xnSDxMaL" },
+    "mum": { "name": "Matilda", "id": "XrExE9yKIg1WjnnlVkGX" },
+    "dad": { "name": "Chris", "id": "iP95p4xoKVk53GoZ742B" }
+  },
+  "model": "eleven_v4",
+  "lead": 1.6,
+  "lines": [
+    { "id": "h1", "who": "narrator", "pause": 0.5, "text": "Every home has a departure. Every single morning." },
+    { "id": "h2", "who": "narrator", "pause": 0.8, "text": "Seven fifty-two. School, work, the bus. Everyone has to make it." },
+    { "id": "p1", "who": "narrator", "pause": 0.5, "text": "But people misjudge time. In a classic study, only three in ten finished when they said they would." },
+    { "id": "p2", "who": "narrator", "pause": 0.9, "text": "At home, it compounds. One long shower, and the whole family is late." },
+    { "id": "w1", "who": "narrator", "pause": 0.8, "text": "A timer doesn't know your eight-minute shower takes twelve. And it can't answer the question that matters: will we make it, and if not, what changes?" },
+    { "id": "s1", "who": "narrator", "pause": 1.0, "text": "So we built Doorbound: a live departure board for the family morning, on Alexa Plus." },
+    { "id": "d1", "who": "mum", "pause": 0.4, "text": "Alexa, start the school run. We leave in forty minutes." },
+    { "id": "d2", "who": "alexa", "pause": 0.6, "text": "School run started. Everyone is on time. Leave at 7:52, in 40 minutes. Isha is the tightest, with about a 9 in 10 chance." },
+    { "id": "d3", "who": "narrator", "pause": 0.8, "text": "Every person gets a row: what they're doing, the minutes left, and their real chance of making it." },
+    { "id": "d4", "who": "dad", "pause": 0.3, "text": "I'm done with the lunches." },
+    { "id": "d5", "who": "alexa", "pause": 0.5, "text": "Pack lunches done. Dad is on to unload dishwasher, about 11 minutes." },
+    { "id": "d6", "who": "narrator", "pause": 0.8, "text": "Every 'done' is a real duration. It learns how long your mornings really take." },
+    { "id": "d7", "who": "mum", "pause": 0.4, "text": "Alexa, Isha's still in the shower. Ten more minutes, she says." },
+    { "id": "d8", "who": "narrator", "pause": 0.4, "text": "Isha's chance drops to forty-eight percent." },
+    { "id": "d9", "who": "alexa", "pause": 0.6, "text": "Re-routed: Isha has breakfast to go and Dad takes over pack bag for Isha. Everyone still leaves at 7:52, and Isha is back on track, with about a 9 in 10 chance." },
+    { "id": "d10", "who": "narrator", "pause": 1.0, "text": "It searched every change the family allowed and chose the smallest one that works. Isha is back to ninety-two percent." },
+    { "id": "d12", "who": "mum", "pause": 0.3, "text": "Alexa, we're out the door!" },
+    { "id": "d13", "who": "alexa", "pause": 0.4, "text": "School run done, on time. Have a good day." },
+    { "id": "d14", "who": "narrator", "pause": 1.2, "text": "Out the door at seven forty-nine. Three minutes to spare." },
+    { "id": "b1", "who": "narrator", "pause": 0.6, "text": "Under the hood: an MCP server with seventeen tools, one for each thing a family says. And the board is an MCP App." },
+    { "id": "b2", "who": "narrator", "pause": 0.6, "text": "Every step is a probability distribution, learned from your own mornings. The re-planner is an exact search, checked against brute force, in a fifth of a millisecond." },
+    { "id": "b3", "who": "narrator", "pause": 0.6, "text": "When it says eighty-five percent, it happens about eighty-five percent of the time, across forty thousand simulated mornings. A hundred tests and the official MCP conformance suite back it up." },
+    { "id": "b4", "who": "narrator", "pause": 0.8, "text": "With no Alexa device, we built a simulator that is a real MCP client and app host. The board you saw is the real product." },
+    { "id": "c1", "who": "narrator", "pause": 3.4, "text": "Doorbound. Every morning, on time." }
+  ]
+}
