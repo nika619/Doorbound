@@ -372,6 +372,7 @@ function choreograph(rr: { changes: Change[] }) {
   unfocus = setTimeout(() => $('board').classList.remove('focus'), 2600);
 }
 let unfocus: ReturnType<typeof setTimeout> | undefined;
+let closing: ReturnType<typeof setTimeout> | undefined;
 /** True while a departure's first frame is drawn: rows and runway blocks come in one after another. */
 let opening = false;
 
@@ -453,8 +454,10 @@ function structure() {
   const dep = board?.departure;
   const people = board?.people ?? [];
   const hasDep = !!dep && dep.lanes.length > 0;
-  // shortcut: the closing card stays until the board next changes, not exactly 15 minutes; fine for a kitchen screen.
-  const ended = !dep ? board?.ended : undefined;
+  // The closing card shows for a quarter of an hour of the family's clock, then the board is ready for next time.
+  const ended = !dep && board?.ended && now() - board.ended.atMs < 15 * 60_000 ? board.ended : undefined;
+  clearTimeout(closing);
+  if (ended) closing = setTimeout(structure, (ended.atMs + 15 * 60_000 - now()) / rate + 50);
   const spare = ended ? Math.round((ended.gateMs - ended.atMs) / 60_000) : 0;
   $('table').hidden = !people.length || !!ended;
   $('runway').hidden = !hasDep;
