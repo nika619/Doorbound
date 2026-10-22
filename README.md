@@ -174,6 +174,8 @@ src/board/    the board (an MCP App), and its 2 kB bridge to the host
 src/site/     the story page: scroll scenes drawn from the core, the board replaying inside
 src/sim/      the Alexa+ simulator, and the phrase list that stands in for Alexa's language model without a key
 scripts/      build (pages and the server bundle), smoke test, benchmark, screenshots, one-turn client
+video/        the submission film as code: the script, ElevenLabs voices, a synthesized score, the real board filmed frame by frame, the composition and its renderer
+deploy/aws/   the CloudFormation stack for hosting every household
 Dockerfile, compose.yaml   the container and the one-command HTTPS deployment
 ```
 
