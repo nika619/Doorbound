@@ -341,9 +341,8 @@ const SWEEP: Record<string, string> = { ok: '#8fdcaa26', tight: '#ffb54730', lat
 function sweep(li: HTMLElement, tone: string) {
   if (reduced.matches) return;
   li.style.setProperty('--sweep', SWEEP[tone] ?? '#ffb54726');
-  li.classList.remove('sweep');
-  void li.offsetWidth; // shortcut: restarts the sweep with one reflow; rare (a change of standing or a re-route)
-  li.classList.add('sweep');
+  // On the row's own ::after, so a new sweep simply starts over: no class juggling, no forced layout.
+  li.animate([{ transform: 'translateX(-100%)' }, { transform: 'translateX(100%)' }], { duration: 1100, easing: 'cubic-bezier(.16,1,.3,1)', pseudoElement: '::after' });
 }
 
 /** A re-route, choreographed: an amber scan crosses the runway, the people it touches light up. */

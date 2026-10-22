@@ -131,8 +131,7 @@ button.done:disabled { opacity: .25; cursor: default; }
 .band[data-tone='tight'] i { background: var(--amber); } .band[data-tone='late'] i { background: var(--late); }
 .scan { position: absolute; top: -14px; bottom: -12px; left: 0; width: 160px; z-index: 2; pointer-events: none; opacity: 0; background: linear-gradient(90deg, transparent, #ffb5472e 70%, #ffb547aa 97%, transparent); }
 .row { position: relative; }
-.row.sweep::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, transparent, var(--sweep, #ffb54726) 50%, transparent); animation: sweep 1.1s var(--ease) both; }
-@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.row::after { content: ''; position: absolute; inset: 0; pointer-events: none; transform: translateX(-100%); background: linear-gradient(90deg, transparent, var(--sweep, #ffb54726) 50%, transparent); } /* swept by sweep() */
 .now { position: absolute; top: -14px; bottom: -12px; left: 0; z-index: 2; width: 3px; background: var(--ink); border-radius: 2px; box-shadow: 0 0 18px 2px #f3ede230; will-change: transform; }
 .gateline { position: absolute; top: -14px; bottom: -40px; left: 0; z-index: 2; border-left: 3px dashed var(--amber); }
 .gateline span { position: absolute; bottom: 0; left: 10px; font: 700 19px/1 var(--cond); letter-spacing: .16em; color: var(--amber); white-space: nowrap; }
@@ -196,7 +195,7 @@ button.done:disabled { opacity: .25; cursor: default; }
 .card .open:hover, .card .open:focus-visible { border-color: var(--ink); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .reroute, .row, .msg .dot, .w, .row.sweep::after, .empty.finale::before { animation: none; }
+  .reroute, .row, .msg .dot, .w, .empty.finale::before { animation: none; }
   .blk, .band, .hair { transition: none; }
 }
 </style>
