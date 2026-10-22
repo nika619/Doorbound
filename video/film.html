@@ -8,6 +8,7 @@
   its own clock. Voices, words and cuts come from out/timeline.js (video/mix.py); the board is the real
   product, filmed by video/capture.mjs. Rendered by video/render.mjs.
 -->
+<script type="importmap">{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }</script>
 <style>
 @font-face { font-family: 'Barlow Condensed'; font-weight: 700; src: url(../node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-700-normal.woff2) format('woff2'); }
 @font-face { font-family: 'Barlow'; font-weight: 500; src: url(../node_modules/@fontsource/barlow/files/barlow-latin-500-normal.woff2) format('woff2'); }
@@ -86,6 +87,7 @@ svg { position: absolute; overflow: visible; }
 </head>
 <body>
 <div id="stage">
+  <canvas id="gl" width="1920" height="1080" style="position:absolute;inset:0;width:1920px;height:1080px"></canvas>
   <section class="layer" id="hook"></section>
   <section class="layer" id="problem"></section>
   <section class="layer" id="why"></section>
@@ -113,6 +115,7 @@ svg { position: absolute; overflow: visible; }
   <div id="grain"></div>
 </div>
 <script src="out/timeline.js"></script>
+<script type="module" src="world.js"></script>
 <script>
 // ---------- motion: numbers, not adjectives (opus-motion-playbook) ----------
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -207,33 +210,12 @@ function flap(parent, text, { x, y, cw = 56, ch = 84, fs = 62, gap = 4, tone = '
 
 // ---------- 01 the hook: a departure board, for a household ----------
 const hook = $('hook');
-const giant = flap(hook, '7:52', { x: 154, y: 330, cw: 190, ch: 290, fs: 230, gap: 10, seed: 3, tone: 'var(--amber)' });
 const hookLabel = el('div', 'label abs', hook, undefined, 'left:154px;top:250px'); hookLabel.innerHTML = '<b>01</b>DEPARTURES · TODAY';
-const ROWS = [['SCHOOL RUN', '7:52', 'BOARDING', 'var(--amber)'], ['WORK', '8:10', 'ON TIME', 'var(--go)'], ['THE BUS', '7:35', 'FINAL CALL', 'var(--late)']];
-const boardRows = ROWS.map(([d, tm, st, tone], i) => ({
-  d: flap(hook, d, { x: 154, y: 330 + i * 120, pad: 11, seed: 10 + i }),
-  t: flap(hook, tm, { x: 154 + 11 * 60 + 60, y: 330 + i * 120, seed: 20 + i }),
-  s: flap(hook, st, { x: 154 + 15 * 60 + 120, y: 330 + i * 120, pad: 10, seed: 30 + i, tone }),
-}));
-const hookTag = el('div', 'abs serif', hook, undefined, 'left:154px;top:740px;font-size:72px;color:var(--ink)');
+const hookTag = el('div', 'abs serif', hook, undefined, 'left:154px;top:800px;font-size:72px;color:var(--ink);text-shadow:0 4px 30px #000');
 const hookTagW = words(hookTag, 'Everyone has to make it.');
 function drawHook(t) {
-  giant.draw(t, 0.25);
-  const school = W('h2', 'school'), work = W('h2', 'work'), bus = W('h2', 'bus') - 0.15;
-  // The giant 7:52 hands its time to the school run's row: one hero move, a heavy spring.
-  const m = sp(t, school - 0.25, HEAVY);
-  const tx = lerp(0, 11 * 60 + 60, m), ty = 0, sc = lerp(1, 56 / 190, m);
-  giant.box.style.transformOrigin = '0 0';
-  giant.box.style.transform = `translate(${tx}px,${ty}px) scale(${sc}) translateZ(0)`;
-  giant.box.style.opacity = 1 - prog(t, school + 0.45, school + 0.6);
-  const push = 1 + 0.025 * E.sine(prog(t, 0, L.h2.end)); // the camera never parks: a slow 2.5% push
-  hook.style.transform = `scale(${push})`; hook.style.transformOrigin = '30% 50%';
+  // The board itself is 3D (world.js): the giant 7:52, then the household's departures.
   hookLabel.style.opacity = E.expo(prog(t, 1.2, 2));
-  boardRows.forEach((r, i) => {
-    const at = [school, work, bus][i];
-    for (const f of [r.d, r.t, r.s]) { f.box.style.opacity = t >= at - 0.1 ? 1 : 0; f.draw(t, at); }
-    if (i === 0) { r.t.box.style.opacity = t >= school + 0.5 ? 1 : 0; r.t.draw(t, -10); } // the giant 7:52 lands here, already settled
-  });
   reveal(hookTagW, t, W('h2', 'everyone') - 0.05, 0.09);
 }
 
@@ -324,22 +306,21 @@ function drawWhy(t) {
 // ---------- 04 the reveal ----------
 const revealL = $('reveal');
 const PLANE = 'M3 21 29 12l-1.6-3.4-8.4 2.6-6.6-6.2-2.6.9 3.8 7.3-6.3 2-2.9-2.2-2 .7z';
-const mark = el('div', 'abs', revealL, undefined, 'left:154px;top:330px');
-mark.innerHTML = `<svg width="150" height="150" viewBox="0 0 32 32" style="position:relative;top:24px"><path d="${PLANE}" fill="none" stroke="#ffb547" stroke-width=".9" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" id="planePath"/><rect x="3" y="26" width="26" height="2.4" rx="1.2" fill="#ffb547" id="planeRule" style="transform-box:fill-box;transform-origin:0 50%"/></svg>`;
-const wordmark = flap(revealL, 'DOORBOUND', { x: 340, y: 340, cw: 118, ch: 176, fs: 150, gap: 8, seed: 40 });
-const sub = el('div', 'abs', revealL, undefined, 'left:160px;top:590px;font-size:52px');
+const mark = el('div', 'abs', revealL, undefined, 'left:885px;top:170px');
+mark.innerHTML = `<svg width="150" height="150" viewBox="0 0 32 32"><path d="${PLANE}" fill="none" stroke="#ffb547" stroke-width=".9" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" id="planePath"/><rect x="3" y="26" width="26" height="2.4" rx="1.2" fill="#ffb547" id="planeRule" style="transform-box:fill-box;transform-origin:0 50%"/></svg>`;
+const sub = el('div', 'abs', revealL, undefined, 'left:0;right:0;top:700px;font-size:52px;text-align:center;text-shadow:0 4px 30px #000');
 const subW = words(sub, 'a live departure board for the family morning,');
-const onAlexa = el('div', 'abs serif', revealL, 'on Alexa+', 'left:160px;top:660px;font-size:86px;color:var(--alexa)');
+const onAlexa = el('div', 'abs serif', revealL, 'on Alexa+', 'left:0;right:0;top:770px;font-size:86px;color:var(--alexa);text-align:center;text-shadow:0 4px 30px #000');
 function drawReveal(t) {
   const s = L.s1.start;
   $('planePath').style.strokeDashoffset = 1 - E.quint(prog(t, s - 0.2, s + 0.9));
   $('planePath').style.fill = `rgba(255,181,71,${prog(t, s + 0.6, s + 1.1)})`;
   $('planeRule').style.transform = `scaleX(${E.expo(prog(t, s + 0.3, s + 1))})`;
-  wordmark.draw(t, W('s1', 'doorbound') - 0.1);
   reveal(subW, t, W('s1', 'live') - 0.05, 0.07);
   reveal([onAlexa], t, W('s1', 'alexa') - 0.08);
-  const out = E.expoIn(prog(t, L.s1.end + 0.35, L.s1.end + 0.85));
-  revealL.style.transform = `translateY(${-out * 160}px)`;
+  // Out before the Echo Show swings in (world.js), so the device has the frame to itself.
+  const out = E.expoIn(prog(t, L.s1.end - 0.8, L.s1.end - 0.4));
+  revealL.style.transform = `translateY(${-out * 120}px)`;
   revealL.style.opacity = 1 - out;
 }
 
@@ -384,10 +365,10 @@ function cam(t) {
   return `translate(${FOCUS[0] - z * px}px,${FOCUS[1] - z * py}px) scale(${z})`;
 }
 async function drawDemo(t) {
-  const rise = sp(t, L.s1.end + 0.25, HEAVY);
+  const H = window.WORLD.HANDOFF;
   const out = E.expoIn(prog(t, L.b1.start - 1.1, L.b1.start - 0.5));
-  $('rig').style.transform = `translateY(${(1 - rise) * 900 + out * -80}px) ${cam(t)}`;
-  $('demo').style.opacity = 1 - out;
+  $('rig').style.transform = `translateY(${out * -80}px) ${cam(t)}`;
+  $('demo').style.opacity = prog(t, H - 0.25, H - 0.05) * (1 - out);
   const f = footage(t);
   const img = $('foot');
   $('home').style.visibility = f ? 'hidden' : 'visible';
@@ -422,9 +403,6 @@ async function drawDemo(t) {
 const build = $('build');
 const bLabel = el('div', 'label abs', build, undefined, 'left:154px;top:54px'); bLabel.innerHTML = '<b>04</b>HOW IT IS BUILT';
 const diagram = el('div', 'abs', build, undefined, 'inset:0;transform-origin:50% 0');
-const NODES = [['Alexa+', 'The customer speaks', 'var(--alexa)'], ['MCP', 'Streamable HTTP · OAuth 2.1', 'var(--ink)'], ['Doorbound', '17 tools, one per thing said', 'var(--amber)'], ['MCP App', 'ui://doorbound/board', 'var(--go)']];
-const nodes = NODES.map(([t1, s, c], i) => { const n = el('div', 'node', diagram, undefined, `left:${154 + i * 430}px;top:300px`); el('div', 't cond', n, t1).style.color = c; el('div', 's', n, s); return n; });
-const wires = svg(diagram, 'left:0;top:0;width:1920px;height:1080px', '0 0 1920 1080', [0, 1, 2].map((i) => `<path d="M${154 + i * 430 + 330} 385 H${154 + (i + 1) * 430}" stroke="#ffb547" stroke-width="3" fill="none" pathLength="1" stroke-dasharray="1" class="wire"/><circle r="7" fill="#ffb547" class="pkt"/>`).join(''));
 const TOOLS = ['SET ROUTINE', 'START DEPARTURE', 'STEP DONE', 'STILL GOING', 'READY TO GO', 'CHANGE DEPARTURE', 'UNDO REROUTE', 'DEPARTURE STATUS', 'LEARNED TIMES', 'PLAN TOMORROW', 'ALLOW CHANGE', 'TV LINK', 'DOOR LINK', 'FORGET HOUSEHOLD', 'HOW ACCURATE', 'END DEPARTURE', 'GET BOARD'];
 const toolFlaps = TOOLS.map((n, i) => flap(diagram, n, { x: 154 + 2 * 430, y: 500, cw: 22, ch: 34, fs: 26, gap: 2, pad: 16, seed: 60 + i, tone: 'var(--amber)' }));
 const panels = [0, 1, 2].map((i) => el('div', 'panel', build, undefined, `left:${154 + i * 560}px;top:560px`));
@@ -446,19 +424,12 @@ el('div', '', panels[2], 'milliseconds, checked against brute force', 'font-size
 function drawBuild(t) {
   const s = L.b1.start;
   bLabel.style.opacity = E.expo(prog(t, s - 0.4, s + 0.3));
-  const at = [W('b1', 'under') - 0.2, W('b1', 'mcp') - 0.1, W('b1', 'seventeen') - 0.3, W('b1', 'app') - 0.3];
-  nodes.forEach((n, i) => { const x = sp(t, at[i], SNAPPY); set(n, x, `translateY(${(1 - x) * 40}px)`); });
-  wires.querySelectorAll('.wire').forEach((w, i) => (w.style.strokeDashoffset = 1 - E.quart(prog(t, at[i + 1] - 0.2, at[i + 1] + 0.5))));
-  wires.querySelectorAll('.pkt').forEach((c, i) => {
-    const on = t > at[i + 1] + 0.5, ph = ((t * 0.9 + i * 0.33) % 1);
-    c.setAttribute('cx', 154 + i * 430 + 330 + E.sine(ph) * 100); c.setAttribute('cy', 385); c.style.opacity = on ? Math.sin(Math.PI * ph) : 0;
-  });
-  // The tools riffle by, one at a time, under the server.
+  // The tools riffle by, one at a time, under the Doorbound slab (world.js), wherever the camera has it.
   const t0 = W('b1', 'seventeen'), per = 0.42;
-  toolFlaps.forEach((f, i) => { const a = t0 + i * per; f.box.style.opacity = t >= a && t < a + per + 0.02 ? 1 : 0; f.draw(t, a); });
-  // Then the diagram rises and the maths comes in underneath.
-  const up = sp(t, L.b2.start - 0.3, HEAVY);
-  diagram.style.transform = `translateY(${-up * 110}px) scale(${1 - 0.25 * up})`;
+  const p = window.WORLD.slabAt(2);
+  p.y -= 1.2;
+  const [px, py] = window.WORLD.project(p);
+  toolFlaps.forEach((f, i) => { const a = t0 + i * per; f.box.style.left = `${px - 190}px`; f.box.style.top = `${py}px`; f.box.style.opacity = t >= a && t < a + per + 0.02 && t < L.b2.start ? 1 : 0; f.draw(t, a); });
   const pIn = [W('b2', 'probability') - 0.3, W('b2', 'exact') - 0.3, W('b2', 'fifth') - 0.4];
   panels.forEach((p, i) => { const x = sp(t, pIn[i], PREMIUM); set(p, x, `translateY(${(1 - x) * 60}px)`); });
   $('lnLine').style.strokeDashoffset = 1 - E.quint(prog(t, pIn[0] + 0.1, pIn[0] + 1.3));
@@ -522,22 +493,16 @@ function drawHonest(t) {
 
 // ---------- 09 the close ----------
 const closeL = $('close');
-const cMark = flap(closeL, 'DOORBOUND', { x: 354, y: 300, cw: 118, ch: 176, fs: 150, gap: 8, seed: 80 });
-const cPlane = el('div', 'abs', closeL, undefined, 'left:170px;top:300px');
-cPlane.innerHTML = `<svg width="150" height="150" viewBox="0 0 32 32" style="position:relative;top:24px"><path d="${PLANE}" fill="#ffb547"/><rect x="3" y="26" width="26" height="2.4" rx="1.2" fill="#ffb547"/></svg>`;
-const cTag = el('div', 'abs serif', closeL, undefined, 'left:170px;top:520px;font-size:110px;color:var(--amber)');
+const cTag = el('div', 'abs serif', closeL, undefined, 'left:0;right:0;top:760px;font-size:96px;color:var(--amber);text-align:center;text-shadow:0 4px 30px #000');
 const cTagW = words(cTag, 'Every morning, on time.');
 const cLinks = el('div', 'abs', closeL, undefined, 'left:174px;top:720px;font-size:32px;line-height:1.6');
-cLinks.innerHTML = 'github.com/nika619/Doorbound<br><span style="color:var(--dim)">nika619.github.io/Doorbound</span>';
-const cCred = el('div', 'abs label', closeL, 'ALEXA+ TRACK · MODEL CONTEXT PROTOCOL · VOICES BY ELEVENLABS (ELEVENLABS.IO)', 'left:174px;top:880px;font-size:18px');
+cLinks.innerHTML = 'github.com/nika619/Doorbound <span style="color:var(--dim)">&nbsp;·&nbsp; nika619.github.io/Doorbound</span>';
+cLinks.style.cssText = 'left:0;right:0;top:900px;font-size:32px;text-align:center';
+const cCred = el('div', 'abs label', closeL, 'ALEXA+ TRACK · MODEL CONTEXT PROTOCOL · VOICES BY ELEVENLABS (ELEVENLABS.IO)', 'left:0;right:0;top:972px;font-size:18px;text-align:center');
 function drawClose(t) {
-  const s = L.c1.start;
-  cMark.draw(t, s - 0.1);
-  reveal([cPlane], t, s - 0.2);
   reveal(cTagW, t, W('c1', 'every') - 0.05, 0.1);
   reveal([cLinks], t, L.c1.end + 0.1);
   reveal([cCred], t, L.c1.end + 0.5);
-  closeL.style.transform = `scale(${1 + 0.02 * E.sine(prog(t, s, TL.total))})`; closeL.style.transformOrigin = '20% 50%';
 }
 
 // ---------- captions: every word as it is said ----------
@@ -579,11 +544,12 @@ function drawWipe(t) {
 // ---------- the frame ----------
 const SCENES = [
   ['hook', 0, L.p1.start - 0.35, drawHook], ['problem', L.p1.start - 0.4, L.w1.start - 0.3, drawProblem], ['why', L.w1.start - 0.35, WIPES[0], drawWhy],
-  ['reveal', WIPES[0], L.s1.end + 0.9, drawReveal], ['demo', L.s1.end + 0.2, WIPES[1], drawDemo], ['build', WIPES[1], L.b3.start - 0.1, drawBuild],
+  ['reveal', WIPES[0], L.s1.end + 0.9, drawReveal], ['demo', L.s1.end, WIPES[1], drawDemo], ['build', WIPES[1], L.b3.start - 0.1, drawBuild],
   ['proof', L.b3.start - 0.35, L.b4.start, drawProof], ['honest', L.b4.start - 0.3, WIPES[2], drawHonest], ['close', WIPES[2], 999, drawClose],
 ];
 const HUD = [[0, ''], [L.p1.start, ''], [L.s1.start, ''], [L.d1.start, '<b>03</b>IN ACTION · THE REAL BOARD'], [L.b1.start, ''], [L.c1.start - 0.5, '']];
 window.seek = async (t) => {
+  window.WORLD.draw(t);
   for (const [id, a, b, draw] of SCENES) {
     const on = t >= a && t < b;
     show($(id), on);
@@ -600,9 +566,10 @@ window.seek = async (t) => {
   $('bar').style.transform = `scaleX(${t / TL.total})`;
 };
 window.DURATION = TL.total;
+window.FILM = { TL, L, W, E, prog, lerp, clamp, sp, HEAVY, PREMIUM, SNAPPY, mulberry }; // for world.js (a module, so it runs after this)
 if (!location.search.includes('render=1')) {
   const t0 = performance.now(); // live preview only: the render calls seek() itself
-  const loop = async () => { await window.seek(((performance.now() - t0) / 1000) % TL.total); requestAnimationFrame(loop); };
+  const loop = async () => { if (window.WORLD) await window.seek(((performance.now() - t0) / 1000) % TL.total); requestAnimationFrame(loop); };
   document.fonts.ready.then(loop);
 }
 </script>
