@@ -102,7 +102,7 @@ test('nobody late, nothing changes: the same object comes back', () => {
 // ---------- random households ----------
 
 /** Every change the household allows, step by step, enumerated independently of the planner. */
-function allowed(dep: Departure, hh: Household, h: History): Change[][] {
+function allowed(dep: Departure, hh: Household): Change[][] {
   const out: Change[][] = [];
   for (const lane of dep.lanes)
     for (let i = currentIndex(lane) + 1; i < lane.tasks.length; i++) {
@@ -128,7 +128,7 @@ test('the plan is the cheapest that works, and the likeliest among the cheapest:
     const hh = randomHousehold(r, 3, 4, 1.6);
     const { h, dep, now } = randomMorning(r, hh);
     if (onTime(dep, now)) continue;
-    const steps = allowed(dep, hh, h);
+    const steps = allowed(dep, hh);
     if (steps.reduce((a, s) => a * (s.length + 1), 1) > 5000) continue;
     checked++;
     // Every combination: each step unchanged or changed one allowed way.
