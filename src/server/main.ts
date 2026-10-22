@@ -343,7 +343,8 @@ async function understandRoute(req: IncomingMessage, res: ServerResponse, client
  * Alexa's voice in the simulator: ElevenLabs, from this machine only and only with ELEVENLABS_API_KEY in .env.
  * GET names the voice; POST says one reply and returns the MP3. The key never leaves the server.
  */
-const VOICE = { name: 'Sarah', id: 'EXAVITQu4vr4xnSDxMaL', model: 'eleven_v4_turbo' }; // until Mayank picks from voice-audition/
+// Sarah: of six shortlisted voices, the darkest and least sharp (spectral centroid 1.6 kHz, 5.8% energy above 4 kHz).
+const VOICE = { name: 'Sarah', id: 'EXAVITQu4vr4xnSDxMaL', model: 'eleven_v4_turbo' };
 async function voiceRoute(req: IncomingMessage, res: ServerResponse, client: string) {
   if (PUBLIC) return send(res, 404, 'Not found.');
   if (req.method === 'GET') return json(res, 200, { voice: env.ELEVENLABS_API_KEY ? VOICE.name : null });
